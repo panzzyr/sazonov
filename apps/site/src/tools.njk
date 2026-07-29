@@ -1,0 +1,26 @@
+---
+layout: layouts/base.njk
+title: Tools
+description: Free, local-first creative tools. No accounts, subscriptions, telemetry, or uploads.
+lang: en
+section: tools
+permalink: /tools/
+translationUrl: /ru/tools/
+englishUrl: /tools/
+---
+<header class="page-heading">
+  <p class="eyebrow">Free · local · no account</p>
+  <h1>Tools</h1>
+</header>
+<section class="prose-body">
+  <p>Small browser tools that process files on your device. They send no data to a server and require no account.</p>
+  <ul class="index-list">
+    {% for tool in tools %}
+      <li>
+        {% if tool.url %}<a href="{{ tool.url }}">{{ tool.name }}</a>{% else %}<strong>{{ tool.name }}</strong>{% endif %}
+        <span class="stamp">{{ tool.status }}</span>
+        {% if tool.description.en %}<p class="description">{{ tool.description.en }}</p>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</section>

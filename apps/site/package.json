@@ -1,0 +1,12 @@
+{
+  "name": "@sazonov/site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../scripts/clean-site.mjs && node ../../scripts/build-css.mjs && eleventy --serve",
+    "build": "node ../../scripts/clean-site.mjs && node ../../scripts/build-css.mjs && eleventy && node ../../scripts/postbuild.mjs",
+    "build:drafts": "node ../../scripts/clean-site.mjs && BUILD_DRAFTS=1 node ../../scripts/build-css.mjs && BUILD_DRAFTS=1 eleventy && node ../../scripts/postbuild.mjs",
+    "lint": "node ../../scripts/lint-content.mjs"
+  }
+}

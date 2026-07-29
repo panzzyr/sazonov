@@ -1,0 +1,19 @@
+---
+layout: layouts/base.njk
+---
+<article class="prose">
+  <header class="page-heading">
+    <p class="eyebrow">{{ "Проект" if lang == "ru" else "Project" }}</p>
+    <h1>{{ title }}</h1>
+    <dl class="project-facts">
+      <div><dt>{{ "роль" if lang == "ru" else "role" }}</dt><dd>{{ role }}</dd></div>
+      <div><dt>{{ "год" if lang == "ru" else "year" }}</dt><dd>{{ year }}</dd></div>
+      <div><dt>{{ "статус" if lang == "ru" else "status" }}</dt><dd>{{ status }}</dd></div>
+      <div><dt>stack</dt><dd>{{ stack }}</dd></div>
+    </dl>
+  </header>
+  <div class="prose-body">{{ content | safe }}</div>
+  <nav class="back-link" aria-label="{{ 'Назад' if lang == 'ru' else 'Back' }}">
+    <a href="{{ '/ru/projects/' if lang == 'ru' else '/projects/' }}">← {{ "Проекты" if lang == "ru" else "Projects" }}</a>
+  </nav>
+</article>

@@ -1,0 +1,17 @@
+{
+  "name": "printor",
+  "short_name": "printor",
+  "description": "Turn video into printed-and-scanned frames locally.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f2f1ee",
+  "theme_color": "#17181a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

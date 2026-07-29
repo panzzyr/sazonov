@@ -1,0 +1,23 @@
+:root {
+  --paper: #f2f1ee;
+  --ink: #17181a;
+  --ink-2: #74777b;
+  --rule: #d2d1cc;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
+  --step--2: .75rem;
+  --step--1: .8125rem;
+  --step-0: 1rem;
+  --step-1: 1.125rem;
+  --step-2: 1.5rem;
+  --step-3: 2rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f1012;
+    --ink: #e8e7e3;
+    --ink-2: #8a8d91;
+    --rule: #2a2c2f;
+  }
+}

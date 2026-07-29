@@ -1,0 +1,26 @@
+---
+layout: layouts/base.njk
+title: Инструменты
+description: Бесплатные локальные инструменты без аккаунтов, подписок, телеметрии и загрузки файлов.
+lang: ru
+section: tools
+permalink: /ru/tools/
+translationUrl: /tools/
+englishUrl: /tools/
+---
+<header class="page-heading">
+  <p class="eyebrow">Бесплатно · локально · без аккаунта</p>
+  <h1>Инструменты</h1>
+</header>
+<section class="prose-body">
+  <p>Небольшие браузерные инструменты, которые обрабатывают файлы на вашем устройстве. Они не отправляют данные на сервер и не требуют аккаунта.</p>
+  <ul class="index-list">
+    {% for tool in tools %}
+      <li>
+        {% if tool.url %}<a href="{{ tool.url }}">{{ tool.name }}</a>{% else %}<strong>{{ tool.name }}</strong>{% endif %}
+        <span class="stamp">{{ tool.status }}</span>
+        {% if tool.description.ru %}<p class="description">{{ tool.description.ru }}</p>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</section>

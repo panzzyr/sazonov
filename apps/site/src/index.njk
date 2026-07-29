@@ -1,0 +1,53 @@
+---
+layout: layouts/base.njk
+title: Stepan Sazonov
+description: Computational physicist and R&D engineer. Nonlinear dynamics, simulation software, and free tools for people who make images.
+lang: en
+section: home
+permalink: /
+translationUrl: /ru/
+englishUrl: /
+---
+<section class="home-intro">
+  <div class="hero-mark{% if branding.logo %} has-logo{% endif %}" aria-hidden="true">{% if branding.logo %}{{ branding.logo | safe }}{% else %}S{% endif %}</div>
+  <h1>Stepan Sazonov</h1>
+  <p class="lede">Computational physicist and R&amp;D engineer. Nonlinear dynamics, simulation software, and free tools for people who make images.</p>
+</section>
+
+<section class="index-section" aria-labelledby="posts-title">
+  <h2 class="section-label" id="posts-title">Posts</h2>
+  {% set recentPosts = collections.posts | whereLang("en") | limit(3) %}
+  {% if recentPosts.length %}
+    <ul class="index-list">
+      {% for post in recentPosts %}
+        <li><a href="{{ post.url }}">{{ post.data.title }}</a><time datetime="{{ post.date | isoDate }}">{{ post.date | isoDate }}</time></li>
+      {% endfor %}
+    </ul>
+    <a class="all-link" href="/posts/">All posts →</a>
+  {% else %}
+    <p class="empty">Notes on physics, software, and production are in progress.</p>
+  {% endif %}
+</section>
+
+<section class="index-section" aria-labelledby="projects-title">
+  <h2 class="section-label" id="projects-title">Projects</h2>
+  <ul class="index-list">
+    {% for project in collections.projects | whereLang("en") | limit(3) %}
+      <li><a href="{{ project.url }}">{{ project.data.title }}</a><time>{{ project.data.year }}</time></li>
+    {% endfor %}
+  </ul>
+  <a class="all-link" href="/projects/">All projects →</a>
+</section>
+
+<section class="index-section" aria-labelledby="tools-title">
+  <h2 class="section-label" id="tools-title">Tools</h2>
+  <ul class="index-list">
+    {% for tool in tools %}
+      <li>
+        {% if tool.url %}<a href="{{ tool.url }}">{{ tool.name }}</a>{% else %}<strong>{{ tool.name }}</strong>{% endif %}
+        <span class="{{ 'stamp' if tool.status == 'in development' else 'status' }}">{{ tool.status }}</span>
+        {% if tool.description.en %}<p class="description">{{ tool.description.en }}</p>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</section>

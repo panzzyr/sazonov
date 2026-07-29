@@ -1,0 +1,26 @@
+{
+  "name": "sazonov",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.24.0",
+  "scripts": {
+    "dev": "pnpm --filter @sazonov/printor dev",
+    "dev:site": "pnpm --filter @sazonov/site dev",
+    "dev:printor": "pnpm --filter @sazonov/printor dev",
+    "build": "pnpm --filter @sazonov/site build && node scripts/budget.mjs && pnpm --filter @sazonov/printor build",
+    "build:drafts": "pnpm --filter @sazonov/site build:drafts && node scripts/budget.mjs",
+    "lint": "pnpm --filter @sazonov/site lint && pnpm --filter @sazonov/printor lint",
+    "test": "node --test tests/*.test.mjs && pnpm --filter @sazonov/printor test",
+    "check": "pnpm lint && pnpm build && pnpm test"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.2",
+    "html-minifier-terser": "^7.2.0",
+    "lightningcss": "^1.30.1",
+    "markdown-it": "^14.1.0",
+    "sharp": "^0.34.3",
+    "svgo": "^4.0.0",
+    "temml": "^0.12.1"
+  }
+}

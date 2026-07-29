@@ -1,0 +1,25 @@
+---
+layout: layouts/base.njk
+title: Проекты
+description: Исследовательские, инженерные и продюсерские проекты Степана Сазонова.
+lang: ru
+section: projects
+permalink: /ru/projects/
+translationUrl: /projects/
+englishUrl: /projects/
+---
+<header class="page-heading">
+  <p class="eyebrow">Избранные работы</p>
+  <h1>Проекты</h1>
+</header>
+<section class="index-section prose-body" aria-label="Проекты">
+  <ul class="index-list">
+    {% for project in collections.projects | whereLang("ru") %}
+      <li>
+        <a href="{{ project.url }}">{{ project.data.title }}</a>
+        <time>{{ project.data.year }}</time>
+        <p class="description">{{ project.data.description }}</p>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
