@@ -4,3 +4,10 @@ apps/*/_site/
 apps/*/dist/
 apps/site/src/_includes/generated/
 *.log
+
+# Full-resolution source scans; the committed library is generated from these
+# by scripts/build-texture-library.mjs into apps/printor/public/textures/.
+/assets/
+
+# Standalone deployment mirror of apps/printor; has its own git repository.
+/printor/

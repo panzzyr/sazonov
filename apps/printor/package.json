@@ -3,16 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build && node ../../scripts/printor-budget.mjs",
-    "lint": "tsc --noEmit",
+    "dev": "node scripts/generate-texture-library.mjs && vite",
+    "build": "node scripts/generate-texture-library.mjs && tsc --noEmit && vite build && node scripts/postbuild.mjs && node scripts/budget.mjs",
+    "lint": "node scripts/generate-texture-library.mjs && tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@sazonov/shell": "workspace:*",
-    "@sazonov/tokens": "workspace:*",
     "fflate": "^0.8.2",
+    "mp4-muxer": "^5.2.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zustand": "^5.0.8"

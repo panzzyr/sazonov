@@ -1,48 +1,112 @@
 # printor
 
-printor turns video or still images into printed-and-scanned frames. Processing
-runs locally in WebGL2; files are never uploaded.
+printor turns video into frames that look printed on a bad printer and then
+scanned back in. Everything runs locally in WebGL2; source files are never
+uploaded and the app makes no network requests at all.
 
 ## Run locally
 
-From the repository root:
-
 ```sh
 pnpm install
-pnpm dev:printor
+pnpm dev
 ```
 
-Open `http://127.0.0.1:5173`. Drop an MP4, MOV, WebM, GIF, PNG, JPEG, or WebP
-onto the canvas. Use the layer list to reorder effects, select a layer to edit
-its controls, and export a PNG sequence as ZIP.
+Open `http://127.0.0.1:5173`. Drop in a video or a still image.
 
-Keyboard shortcuts:
+`space` plays, arrow keys step frames, `\` compares with the source, `r`
+rerolls the seed, and `e` exports.
 
-- `space` — play or pause video
-- `←` / `→` — step one output frame
-- `shift` + `←` / `→` — step ten frames
-- `\` — hold to compare with the source
-- `r` — reroll the deterministic seed
-- `e` — export
+## The pipeline
+
+Time is posterized first: the source is sampled at the target frame rate (4–16
+fps), so a 24 fps clip exported at 8 fps holds each frame for three source
+frames. Then every output frame runs through nine stages, in this fixed order:
+
+| # | Stage | What it does |
+| --- | --- | --- |
+| 1 | motion blur | Directional smear; blur distance and angle |
+| 2 | soft paper | Paper stock blended under the print |
+| 3 | grain & gain | Noise and contrast feeding the threshold |
+| 4 | torn edges | The silkscreen threshold — balance, smoothness, contrast, roughness |
+| 5 | wiggle | Whole-frame registration drift |
+| 6 | displacement | Warps the frame using a paper texture as a height map |
+| 7 | halftone | Procedural rotated dot screen |
+| 8 | paper cuts | Torn paper shapes used as an alpha mask |
+| 9 | overlay | Hard paper stock laid over the finished print |
+
+Each stage can be switched off, and each has an **applied on N% of frames**
+control so a stage can hit, say, 40% of frames at random.
+
+**Every numeric parameter is a range, not a value.** For each frame the range
+collapses to one number drawn from `hash(seed, frame, stage, channel)`. Texture
+stages work the same way: you select a pool of library images and each frame
+draws one. That is what makes every frame print differently while a given seed
+still reproduces the sequence exactly.
+
+Stages 5 and 6 come after the threshold but are applied by shifting the
+sampling coordinate the upstream stages read from, which is equivalent and
+keeps the whole pipeline to one draw call.
+
+### Torn edges
+
+This is the stage the look depends on. It is Photoshop's *Torn Edges* rather
+than a dither: grain and gain break the tone into speckle, then a low-frequency
+fbm pushes luminance across the balance point so the boundary tears along
+paper-fibre shapes instead of cutting a clean line.
+
+- **image balance** — where the threshold sits; lower keeps more ink
+- **smoothness** — size of the torn fibre; low is frayed, high is a calm coastline
+- **contrast** — hardness of the edge
+- **roughness** — how far the edge may wander from the true outline
+
+Grain feeds this stage, so tune grain and gain first.
+
+## Output
+
+Frames are strictly grayscale. Export is either:
+
+- **PNG sequence (ZIP)** with any combination of three passes — flat grayscale,
+  white ink (black keyed to alpha), and black ink (white keyed to alpha). Each
+  pass lands in its own folder. Combined with the global **invert** toggle this
+  covers all four ink variants.
+- **MP4** at the target frame rate, via WebCodecs. H.264 carries no alpha, so
+  MP4 is always the flat grayscale result.
+
+Preview and export share the same shader and the same per-frame parameters, and
+pixel-denominated settings are authored against 1080p, so the proxied preview
+shows the same print as the full-resolution export.
+
+## Texture library
+
+The committed library under `public/textures/` is generated from full-resolution
+scans that live outside the repository:
+
+```sh
+node ../../scripts/build-texture-library.mjs --force
+```
+
+It reads `<repo>/assets/{soft paper texture,hard paper texture,paper parts}/`
+and writes 2048 px WebP plus a manifest. Cutouts are reduced to their alpha
+channel, since they are only used as masks. `scripts/generate-texture-library.mjs`
+then bakes the manifest into `src/generatedTextures.ts` — the app ships
+`connect-src 'none'`, so it cannot fetch a manifest at runtime.
+
+Groups map to stages: `soft-paper` → soft paper, `hard-paper` → displacement and
+overlay, `paper-parts` → paper cuts.
 
 ## Build and test
 
 ```sh
-pnpm --filter @sazonov/printor build
-pnpm --filter @sazonov/printor test
+pnpm lint
+pnpm test
+pnpm build
 ```
 
-Production files are written to `apps/printor/dist/`.
+`dist/assets/*.{js,css}` must stay under 300 KB gzip and `dist/index.html` must
+keep `connect-src 'none'`; `scripts/budget.mjs` fails the build otherwise.
 
-## Architecture
+## Publish
 
-The source frame is uploaded to a WebGL2 texture. A single fragment shader
-applies reorderable logical passes for levels, noise, dither/halftone, and
-paper artifacts. Every varying value is derived from
-`hash(seed, frame, layer, channel)`; the pipeline never calls `Math.random()`.
-PNG export renders the same shader at source resolution and includes the preset
-as `printor.json` in the ZIP.
-
-The baseline release intentionally ships universal PNG ZIP export first.
-WebCodecs encoding, worker rendering, additional passes, and user textures are
-the next milestones.
+Push `main`; the Pages workflow builds and deploys `dist/`. In GitHub, choose
+**Settings → Pages → Source: GitHub Actions**, then set the custom domain to
+`printor.sazonov.space`. The committed `public/CNAME` preserves that domain.

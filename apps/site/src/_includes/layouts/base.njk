@@ -8,6 +8,7 @@
     <meta name="theme-color" content="#f2f1ee" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0f1012" media="(prefers-color-scheme: dark)">
     <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self' data:; media-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
     <link rel="canonical" href="{{ page.url | absoluteUrl(site.url) }}">
     <link rel="alternate" hreflang="{{ lang or 'en' }}" href="{{ page.url | absoluteUrl(site.url) }}">
     {% if translationUrl %}

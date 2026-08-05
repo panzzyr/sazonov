@@ -1,39 +1,51 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { PrivacyLine, ToolShell } from "@sazonov/shell";
-import { Inspector } from "./components/Inspector";
-import { LayersPanel } from "./components/LayersPanel";
-import { PresetPanel } from "./components/PresetPanel";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PrivacyLine, ToolShell } from "./shared/Shell";
+import { PipelinePanel } from "./components/PipelinePanel";
+import { StageInspector } from "./components/StageInspector";
+import { SliderControl } from "./components/RangeControl";
 import { Renderer } from "./engine/Renderer";
-import { downloadBlob, exportPngSequence } from "./export/pngSequence";
-import { decodeSnapshot, parseSnapshot } from "./presetState";
-import { usePrintorStore } from "./store";
+import { resolveFrame } from "./engine/frameParams";
+import { TextureCache } from "./engine/textureCache";
+import { downloadBlob, frameCount, MAX_EXPORT_FRAMES, type ExportSource } from "./export/renderSequence";
+import { exportPngSequence } from "./export/pngSequence";
+import { canEncodeMp4, exportMp4 } from "./export/mp4";
+import { decodeSettings, encodeSettings, parseSettings } from "./projectState";
+import { initialSettings, usePrintorStore } from "./store";
+import { maxFps, minFps, textureStages, type ExportFormat, type ExportInk } from "./types";
+
+const STORAGE_KEY = "printor-project-v3";
+const PREVIEW_EDGE = 900;
 
 type LoadedMedia =
-  | {
-      kind: "video";
-      file: File;
-      video: HTMLVideoElement;
-      url: string;
-      width: number;
-      height: number;
-      duration: number;
-    }
-  | {
-      kind: "image";
-      file: File;
-      bitmap: ImageBitmap;
-      width: number;
-      height: number;
-      duration: number;
-    };
+  | { kind: "video"; file: File; video: HTMLVideoElement; url: string; width: number; height: number; duration: number }
+  | { kind: "image"; file: File; bitmap: ImageBitmap; width: number; height: number; duration: number };
 
-type ExportState = {
-  completed: number;
-  total: number;
+type ExportState = { completed: number; total: number; label: string };
+
+const inkLabels: Record<ExportInk, string> = {
+  flat: "grayscale",
+  white: "white ink (black → alpha)",
+  black: "black ink (white → alpha)",
 };
 
-function metadata(video: HTMLVideoElement) {
+/**
+ * Waits for the first decoded frame.
+ *
+ * A codec the browser cannot decode does not always raise `error` — it can sit
+ * in NETWORK_LOADING forever. Without the timeout that reads to the user as a
+ * dead drop zone, so treat silence as a decode failure.
+ */
+function metadata(video: HTMLVideoElement, timeoutMs = 15_000) {
   return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("This browser could not decode that video. Try an H.264 MP4, or export frames from your editor as PNG."));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("error", onError);
+    };
     const onReady = () => {
       cleanup();
       resolve();
@@ -42,62 +54,102 @@ function metadata(video: HTMLVideoElement) {
       cleanup();
       reject(new Error("This browser cannot decode the selected video."));
     };
-    const cleanup = () => {
-      video.removeEventListener("loadeddata", onReady);
-      video.removeEventListener("error", onError);
-    };
     video.addEventListener("loadeddata", onReady, { once: true });
     video.addEventListener("error", onError, { once: true });
   });
 }
 
 function previewSize(width: number, height: number) {
-  const scale = Math.min(1, 720 / Math.max(width, height));
+  const scale = Math.min(1, PREVIEW_EDGE / Math.max(width, height));
   return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale)),
+    width: Math.max(2, Math.round(width * scale)),
+    height: Math.max(2, Math.round(height * scale)),
   };
-}
-
-function mediaLabel(media: LoadedMedia) {
-  const dimensions = `${media.width}×${media.height}`;
-  if (media.kind === "image") return `${dimensions} · 1 frame`;
-  return `${dimensions} · ${media.duration.toFixed(1)}s`;
 }
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const projectInputRef = useRef<HTMLInputElement>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const mediaRef = useRef<LoadedMedia | null>(null);
+  const cacheRef = useRef(new TextureCache());
   const exportController = useRef<AbortController | null>(null);
   const persistenceReady = useRef(false);
+  const redrawRef = useRef<() => void>(() => {});
+
   const settings = usePrintorStore((state) => state.settings);
-  const layers = usePrintorStore((state) => state.layers);
-  const setSetting = usePrintorStore((state) => state.setSetting);
+  const replaceSettings = usePrintorStore((state) => state.replaceSettings);
+  const setGlobal = usePrintorStore((state) => state.setGlobal);
   const reroll = usePrintorStore((state) => state.reroll);
-  const reset = usePrintorStore((state) => state.reset);
-  const replaceState = usePrintorStore((state) => state.replaceState);
   const undo = usePrintorStore((state) => state.undo);
   const redo = usePrintorStore((state) => state.redo);
-  const [media, setMedia] = useState<LoadedMedia | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [showOriginal, setShowOriginal] = useState(false);
-  const [fit, setFit] = useState(true);
-  const [error, setError] = useState("");
-  const [warning, setWarning] = useState("");
-  const [exportState, setExportState] = useState<ExportState | null>(null);
 
-  const draw = useCallback((target: LoadedMedia, time = currentTime, original = showOriginal) => {
+  const [media, setMedia] = useState<LoadedMedia | null>(null);
+  const [frame, setFrame] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [exportState, setExportState] = useState<ExportState | null>(null);
+  const [format, setFormat] = useState<ExportFormat>("png");
+  const [inks, setInks] = useState<ExportInk[]>(["flat"]);
+
+  const totalFrames = media
+    ? media.kind === "image"
+      ? 1
+      : Math.max(1, Math.ceil(media.duration * settings.targetFps))
+    : 1;
+
+  /**
+   * Draws one frame. Textures that are not decoded yet are requested and the
+   * frame is redrawn when they arrive, so the preview fills in rather than
+   * flashing an unstyled frame.
+   */
+  const draw = useCallback((target: LoadedMedia, index: number, original: boolean) => {
     const renderer = rendererRef.current;
     if (!renderer) return;
     const size = previewSize(target.width, target.height);
     renderer.resize(size.width, size.height);
+
+    const params = resolveFrame(settings, index);
+    const cache = cacheRef.current;
+    let waiting = false;
+
+    for (const stage of textureStages) {
+      const id = params[stage].textureId;
+      if (!params.active[stage] || !id) continue;
+      const image = cache.get(id);
+      if (image) renderer.setStageTexture(stage, image, id);
+      else {
+        waiting = true;
+        void cache.load(id).then((loaded) => {
+          if (loaded) redrawRef.current();
+        });
+      }
+    }
+
     const source = target.kind === "video" ? target.video : target.bitmap;
-    const frame = target.kind === "video" ? Math.floor(time * settings.targetFps) : 0;
-    renderer.render(source, settings, layers, frame, original);
-  }, [currentTime, layers, settings, showOriginal]);
+    renderer.render(source, params, {
+      // The preview always shows the flat grayscale result; the ink passes
+      // only change how the frame is written to disk.
+      ink: "flat",
+      invert: settings.invert,
+      bypass: original,
+    });
+    return waiting;
+  }, [settings]);
+
+  // `media` is a dependency even though the ref is what gets read: loading a
+  // new source must repaint, and the ref alone would not re-run the effect.
+  const redraw = useCallback(() => {
+    if (mediaRef.current) draw(mediaRef.current, frame, showOriginal);
+  }, [draw, frame, showOriginal, media]);
+
+  useEffect(() => {
+    redrawRef.current = redraw;
+    redraw();
+  }, [redraw]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -106,31 +158,51 @@ export function App() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "WebGL2 initialization failed.");
     }
+    return () => {
+      rendererRef.current?.dispose();
+      rendererRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
     try {
       const shared = new URLSearchParams(window.location.hash.slice(1)).get("p");
-      const saved = window.localStorage.getItem("printor-project-v1");
-      if (shared) replaceState(decodeSnapshot(shared));
-      else if (saved) replaceState(parseSnapshot(JSON.parse(saved)));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Saved project could not be restored.");
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (shared) replaceSettings(decodeSettings(shared));
+      else if (saved) replaceSettings(parseSettings(JSON.parse(saved)));
+    } catch {
+      setNotice("A saved project could not be restored; defaults were loaded.");
     }
     queueMicrotask(() => {
       persistenceReady.current = true;
     });
-  }, [replaceState]);
+  }, [replaceSettings]);
 
   useEffect(() => {
     if (!persistenceReady.current) return;
-    window.localStorage.setItem("printor-project-v1", JSON.stringify({ settings, layers }));
-  }, [layers, settings]);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, settings }));
+    } catch {
+      // A full or disabled storage quota must not interrupt editing.
+    }
+  }, [settings]);
+
+  // Warm the cache for the frames the user is most likely to scrub through.
+  useEffect(() => {
+    const needed = new Set<string>();
+    for (let index = 0; index < Math.min(totalFrames, 48); index += 1) {
+      const params = resolveFrame(settings, index);
+      for (const stage of textureStages) {
+        const id = params[stage].textureId;
+        if (params.active[stage] && id) needed.add(id);
+      }
+    }
+    void cacheRef.current.preload(needed);
+  }, [settings, totalFrames]);
 
   useEffect(() => {
     mediaRef.current = media;
-    if (media) draw(media);
-  }, [draw, media]);
+  }, [media]);
 
   useEffect(() => () => {
     const loaded = mediaRef.current;
@@ -138,24 +210,47 @@ export function App() {
     if (loaded?.kind === "image") loaded.bitmap.close();
   }, []);
 
+  /** Playback steps whole output frames, so what plays is what exports. */
   useEffect(() => {
-    if (!playing || media?.kind !== "video") return;
-    let animationFrame = 0;
-    const video = media.video;
-    void video.play().catch(() => setPlaying(false));
-    const tick = () => {
-      const time = video.currentTime;
-      setCurrentTime(time);
-      draw(media, time);
-      if (!video.ended && !video.paused) animationFrame = requestAnimationFrame(tick);
-      else setPlaying(false);
+    if (!playing || !media || media.kind !== "video") return;
+    let cancelled = false;
+    let timer = 0;
+    let current = frame;
+
+    const step = async () => {
+      if (cancelled) return;
+      current = (current + 1) % totalFrames;
+      const time = Math.min(media.duration, current / settings.targetFps);
+      media.video.currentTime = time;
+      await new Promise<void>((resolve) => {
+        media.video.addEventListener("seeked", () => resolve(), { once: true });
+        setTimeout(resolve, 400);
+      });
+      if (cancelled) return;
+      setFrame(current);
+      timer = window.setTimeout(step, 1000 / settings.targetFps);
     };
-    animationFrame = requestAnimationFrame(tick);
+
+    timer = window.setTimeout(step, 1000 / settings.targetFps);
     return () => {
-      cancelAnimationFrame(animationFrame);
-      video.pause();
+      cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [draw, media, playing]);
+    // `frame` is intentionally read once at start; the loop owns it afterwards.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, media, settings.targetFps, totalFrames]);
+
+  const goToFrame = useCallback((index: number) => {
+    const target = mediaRef.current;
+    if (!target) return;
+    const next = Math.max(0, Math.min(totalFrames - 1, index));
+    setFrame(next);
+    if (target.kind === "video") {
+      const time = Math.min(target.duration, next / settings.targetFps);
+      target.video.currentTime = time;
+      target.video.addEventListener("seeked", () => redrawRef.current(), { once: true });
+    }
+  }, [settings.targetFps, totalFrames]);
 
   const disposeCurrent = useCallback(() => {
     setPlaying(false);
@@ -168,11 +263,11 @@ export function App() {
 
   const loadFile = useCallback(async (file: File) => {
     setError("");
-    setWarning("");
+    setNotice("");
     disposeCurrent();
     let pendingUrl = "";
     try {
-      if (file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name)) {
+      if (file.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name)) {
         const url = URL.createObjectURL(file);
         pendingUrl = url;
         const video = document.createElement("video");
@@ -181,11 +276,6 @@ export function App() {
         video.playsInline = true;
         video.preload = "auto";
         await metadata(video);
-        const duration = Math.min(30, video.duration || 0);
-        if (video.duration > 30) setWarning("Only the first 30 seconds will be exported in this release.");
-        if (Math.max(video.videoWidth, video.videoHeight) > 1920) {
-          setWarning("This source is above 1080p. Preview is proxied; full export may use substantial memory.");
-        }
         const loaded: LoadedMedia = {
           kind: "video",
           file,
@@ -193,13 +283,13 @@ export function App() {
           url,
           width: video.videoWidth,
           height: video.videoHeight,
-          duration,
+          duration: video.duration || 0,
         };
-        setCurrentTime(0);
         mediaRef.current = loaded;
         setMedia(loaded);
+        setFrame(0);
+        video.currentTime = 0;
         pendingUrl = "";
-        draw(loaded, 0);
         return;
       }
       if (file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(file.name)) {
@@ -212,54 +302,71 @@ export function App() {
           height: bitmap.height,
           duration: 0,
         };
-        if (/gif$/i.test(file.name)) setWarning("GIF import currently uses its first decoded frame.");
-        setCurrentTime(0);
+        if (/gif$/i.test(file.name)) setNotice("GIF import uses the first decoded frame.");
         mediaRef.current = loaded;
         setMedia(loaded);
-        draw(loaded, 0);
+        setFrame(0);
         return;
       }
-      throw new Error("Use MP4, MOV, WebM, GIF, PNG, JPEG, or WebP.");
+      throw new Error("Use MP4, MOV, WebM, PNG, JPEG, or WebP.");
     } catch (caught) {
       if (pendingUrl) URL.revokeObjectURL(pendingUrl);
       setMedia(null);
       setError(caught instanceof Error ? caught.message : "The selected file could not be opened.");
     }
-  }, [disposeCurrent, draw]);
+  }, [disposeCurrent]);
 
-  const seekTo = useCallback((time: number) => {
-    if (media?.kind !== "video") return;
-    setPlaying(false);
-    const next = Math.max(0, Math.min(Math.max(0, media.duration - 0.001), time));
-    media.video.currentTime = next;
-    setCurrentTime(next);
-    media.video.addEventListener("seeked", () => draw(media, next), { once: true });
-  }, [draw, media]);
+  const toggleInk = (ink: ExportInk) => {
+    setInks((current) => {
+      if (current.includes(ink)) {
+        const next = current.filter((value) => value !== ink);
+        return next.length ? next : ["flat"];
+      }
+      return [...current, ink];
+    });
+  };
 
-  const exportFrames = useCallback(async () => {
-    if (!media || exportState) return;
+  const runExport = useCallback(async () => {
+    const target = mediaRef.current;
+    if (!target || exportState) return;
     setPlaying(false);
     setError("");
     const controller = new AbortController();
     exportController.current = controller;
-    const total = media.kind === "video"
-      ? Math.min(300, Math.max(1, Math.ceil(media.duration * settings.targetFps)))
-      : 1;
-    setExportState({ completed: 0, total });
+
+    const source: ExportSource = target.kind === "video"
+      ? { kind: "video", video: target.video, duration: target.duration }
+      : { kind: "image", bitmap: target.bitmap };
+    const total = frameCount(source, settings.targetFps);
+    const stem = target.file.name.replace(/\.[^.]+$/, "") || "printor";
+
+    setExportState({ completed: 0, total, label: format === "mp4" ? "encoding" : "rendering" });
     try {
-      const blob = await exportPngSequence({
-        source: media.kind === "video"
-          ? { kind: "video", video: media.video, duration: media.duration }
-          : { kind: "image", bitmap: media.bitmap },
-        width: media.width,
-        height: media.height,
-        basename: media.file.name,
-        settings,
-        layers,
-        signal: controller.signal,
-        onProgress: (completed, frameTotal) => setExportState({ completed, total: frameTotal }),
-      });
-      downloadBlob(blob, `${media.file.name.replace(/\.[^.]+$/, "")}-printor.zip`);
+      if (format === "mp4") {
+        const blob = await exportMp4({
+          source,
+          width: target.width,
+          height: target.height,
+          settings,
+          cache: cacheRef.current,
+          signal: controller.signal,
+          onProgress: (completed, frames) => setExportState({ completed, total: frames, label: "encoding" }),
+        });
+        downloadBlob(blob, `${stem}-printor.mp4`);
+      } else {
+        const blob = await exportPngSequence({
+          source,
+          width: target.width,
+          height: target.height,
+          settings,
+          cache: cacheRef.current,
+          signal: controller.signal,
+          inks,
+          basename: target.file.name,
+          onProgress: (completed, frames) => setExportState({ completed, total: frames, label: "rendering" }),
+        });
+        downloadBlob(blob, `${stem}-printor.zip`);
+      }
     } catch (caught) {
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
         setError(caught instanceof Error ? caught.message : "Export failed.");
@@ -267,13 +374,41 @@ export function App() {
     } finally {
       exportController.current = null;
       setExportState(null);
-      draw(media);
+      redrawRef.current();
     }
-  }, [draw, exportState, layers, media, settings]);
+  }, [exportState, format, inks, settings]);
+
+  const saveProject = useCallback(() => {
+    const blob = new Blob([JSON.stringify({ version: 3, settings }, null, 2)], { type: "application/json" });
+    downloadBlob(blob, "printor-project.json");
+  }, [settings]);
+
+  const copyShareLink = useCallback(async () => {
+    const url = `${window.location.origin}${window.location.pathname}#p=${encodeSettings(settings)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice("Share link copied. It carries the settings only, never your media.");
+    } catch {
+      window.location.hash = `p=${encodeSettings(settings)}`;
+      setNotice("Share link is in the address bar.");
+    }
+  }, [settings]);
+
+  const loadProject = useCallback(async (file: File) => {
+    try {
+      replaceSettings(parseSettings(JSON.parse(await file.text())));
+      setNotice(`Loaded ${file.name}.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "That project file could not be read.");
+    }
+  }, [replaceSettings]);
 
   useEffect(() => {
     const editable = (target: EventTarget | null) =>
-      target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+      target instanceof HTMLInputElement
+      || target instanceof HTMLTextAreaElement
+      || target instanceof HTMLSelectElement;
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (editable(event.target)) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
@@ -282,30 +417,24 @@ export function App() {
         else undo();
         return;
       }
-      if (event.key === "\\") {
-        setShowOriginal(true);
-        if (media) draw(media, currentTime, true);
-      }
+      if (event.key === "\\") setShowOriginal(true);
       if (event.key === " " && media?.kind === "video") {
         event.preventDefault();
         setPlaying((value) => !value);
       }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        seekTo(currentTime - (event.shiftKey ? 10 : 1) / settings.targetFps);
+        goToFrame(frame - (event.shiftKey ? 10 : 1));
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        seekTo(currentTime + (event.shiftKey ? 10 : 1) / settings.targetFps);
+        goToFrame(frame + (event.shiftKey ? 10 : 1));
       }
       if (event.key.toLowerCase() === "r") reroll();
-      if (event.key.toLowerCase() === "e") void exportFrames();
+      if (event.key.toLowerCase() === "e") void runExport();
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key === "\\") {
-        setShowOriginal(false);
-        if (media) draw(media, currentTime, false);
-      }
+      if (event.key === "\\") setShowOriginal(false);
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -313,24 +442,20 @@ export function App() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [currentTime, draw, exportFrames, media, redo, reroll, seekTo, settings.targetFps, undo]);
+  }, [frame, goToFrame, media, redo, reroll, runExport, undo]);
+
+  const mp4Available = useMemo(() => canEncodeMp4(), []);
+  const truncated = totalFrames > MAX_EXPORT_FRAMES;
 
   return (
     <ToolShell>
       <main className="printor-app">
         <div className="workspace">
-          <PresetPanel />
-          <LayersPanel />
+          <PipelinePanel />
+
           <section className="canvas-panel" aria-label="Preview">
-            <div className="canvas-heading">
-              <h2>Canvas</h2>
-              <div className="view-options">
-                <button className={fit ? "active" : ""} type="button" onClick={() => setFit(true)}>fit</button>
-                <button className={!fit ? "active" : ""} type="button" onClick={() => setFit(false)}>100%</button>
-              </div>
-            </div>
             <div
-              className={`canvas-stage${fit ? " fit" : ""}`}
+              className="canvas-stage"
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.preventDefault();
@@ -340,11 +465,11 @@ export function App() {
             >
               {!media && (
                 <button className="drop-zone" type="button" onClick={() => inputRef.current?.click()}>
-                  <strong>Drop a video here</strong>
-                  <span>or choose a file</span>
+                  <strong>Drop a video or image</strong>
+                  <span>MP4, MOV, WebM, PNG, JPEG, WebP — nothing leaves this machine</span>
                 </button>
               )}
-              <canvas ref={canvasRef} hidden={!media} aria-label="Processed media preview" />
+              <canvas ref={canvasRef} hidden={!media} aria-label="Processed preview" />
               <input
                 ref={inputRef}
                 className="visually-hidden"
@@ -357,52 +482,153 @@ export function App() {
                 }}
               />
             </div>
+
             <div className="canvas-meta">
               <span>{media ? media.file.name : "no source"}</span>
-              <span>{media ? mediaLabel(media) : "≤30s · ≤300 frames"}</span>
+              <span>
+                {media
+                  ? `${media.width}×${media.height} · frame ${frame + 1}/${totalFrames}`
+                  : "hold \\ to compare with the source"}
+              </span>
             </div>
+
+            <div className="transport">
+              <button type="button" onClick={() => goToFrame(frame - 1)} disabled={!media} aria-label="Previous frame">←</button>
+              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={media?.kind !== "video"}>
+                {playing ? "pause" : "play"}
+              </button>
+              <button type="button" onClick={() => goToFrame(frame + 1)} disabled={!media} aria-label="Next frame">→</button>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, totalFrames - 1)}
+                step={1}
+                value={frame}
+                disabled={!media || totalFrames < 2}
+                aria-label="Frame"
+                onChange={(event) => goToFrame(Number(event.target.value))}
+              />
+            </div>
+
             <PrivacyLine />
-            {warning && <p className="notice" role="status">{warning}</p>}
+            {notice && <p className="notice" role="status">{notice}</p>}
             {error && <p className="error" role="alert">{error}</p>}
           </section>
-          <Inspector />
-          <section className="transport" aria-label="Transport and export">
-            <div className="transport-buttons">
-              <button type="button" onClick={() => seekTo(currentTime - 1 / settings.targetFps)} disabled={media?.kind !== "video"} aria-label="Previous frame">←</button>
-              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={media?.kind !== "video"}>{playing ? "pause" : "play"}</button>
-              <button type="button" onClick={() => seekTo(currentTime + 1 / settings.targetFps)} disabled={media?.kind !== "video"} aria-label="Next frame">→</button>
-            </div>
-            <label className="time-control">
-              <span>{currentTime.toFixed(2)} / {media?.kind === "video" ? media.duration.toFixed(2) : "0.00"}s</span>
-              <input type="range" min={0} max={media?.kind === "video" ? media.duration : 0} step={media?.kind === "video" ? 1 / settings.targetFps : 1} value={currentTime} disabled={media?.kind !== "video"} onChange={(event) => seekTo(Number(event.target.value))} />
-            </label>
-            <label className="compact-control">
-              <span>fps</span>
-              <input type="number" min={1} max={30} value={settings.targetFps} onChange={(event) => setSetting("targetFps", Math.max(1, Math.min(30, Number(event.target.value))))} />
-            </label>
-            <div className="seed-control">
-              <span>seed {settings.seed}</span>
-              <button type="button" onClick={reroll} aria-label="Reroll seed">↻</button>
-            </div>
-            <label className="chaos-control">
-              <span>chaos</span>
-              <input type="range" min={0} max={1} step={0.01} value={settings.chaos} onChange={(event) => setSetting("chaos", Number(event.target.value))} />
-            </label>
-            <div className="history-buttons">
-              <button type="button" onClick={undo} aria-label="Undo">undo</button>
-              <button type="button" onClick={redo} aria-label="Redo">redo</button>
-              <button type="button" onClick={reset}>reset</button>
-            </div>
-            {exportState ? (
-              <div className="export-progress" role="status">
-                <span>{exportState.completed}/{exportState.total}</span>
-                <progress value={exportState.completed} max={exportState.total} />
-                <button type="button" onClick={() => exportController.current?.abort()}>cancel</button>
+
+          <div className="side-column">
+            <StageInspector />
+
+            <section className="output-panel" aria-label="Output">
+              <div className="panel-heading">
+                <h2>output</h2>
+                <button type="button" className="ghost" onClick={reroll} title="Redraw every random value">
+                  seed {settings.seed} ↻
+                </button>
               </div>
-            ) : (
-              <button className="export-button" type="button" disabled={!media} onClick={() => void exportFrames()}>export PNG ZIP</button>
-            )}
-          </section>
+
+              <SliderControl
+                label="frame rate"
+                value={settings.targetFps}
+                min={minFps}
+                max={maxFps}
+                unit=" fps"
+                onChange={(value) => setGlobal("targetFps", value)}
+              />
+
+              <label className="toggle-control">
+                <input
+                  type="checkbox"
+                  checked={settings.invert}
+                  onChange={(event) => setGlobal("invert", event.target.checked)}
+                />
+                <span>invert</span>
+              </label>
+
+              <div className="format-switch" role="group" aria-label="Export format">
+                <button
+                  type="button"
+                  className={format === "png" ? "active" : ""}
+                  onClick={() => setFormat("png")}
+                >
+                  PNG sequence
+                </button>
+                <button
+                  type="button"
+                  className={format === "mp4" ? "active" : ""}
+                  disabled={!mp4Available}
+                  title={mp4Available ? "" : "This browser has no WebCodecs H.264 encoder."}
+                  onClick={() => setFormat("mp4")}
+                >
+                  MP4
+                </button>
+              </div>
+
+              {format === "png" ? (
+                <fieldset className="ink-passes">
+                  <legend>passes</legend>
+                  {(["flat", "white", "black"] as ExportInk[]).map((ink) => (
+                    <label key={ink} className="toggle-control">
+                      <input
+                        type="checkbox"
+                        checked={inks.includes(ink)}
+                        onChange={() => toggleInk(ink)}
+                      />
+                      <span>{inkLabels[ink]}</span>
+                    </label>
+                  ))}
+                  <p className="control-hint">
+                    Each pass is a separate folder in the ZIP. Combine with invert
+                    to get all four variants.
+                  </p>
+                </fieldset>
+              ) : (
+                <p className="control-hint">
+                  MP4 is written at {settings.targetFps} fps in flat grayscale.
+                  H.264 has no alpha channel, so the ink passes are PNG-only.
+                </p>
+              )}
+
+              {truncated && (
+                <p className="notice">
+                  Only the first {MAX_EXPORT_FRAMES} frames will be exported.
+                </p>
+              )}
+
+              {exportState ? (
+                <div className="export-progress" role="status">
+                  <span>{exportState.label} {exportState.completed}/{exportState.total}</span>
+                  <progress value={exportState.completed} max={exportState.total} />
+                  <button type="button" onClick={() => exportController.current?.abort()}>cancel</button>
+                </div>
+              ) : (
+                <button className="export-button" type="button" disabled={!media} onClick={() => void runExport()}>
+                  export {format === "mp4" ? "MP4" : "PNG ZIP"}
+                </button>
+              )}
+
+              <div className="project-actions">
+                <button type="button" onClick={undo}>undo</button>
+                <button type="button" onClick={redo}>redo</button>
+                <button type="button" onClick={() => replaceSettings(initialSettings())}>reset</button>
+              </div>
+              <div className="project-actions">
+                <button type="button" onClick={saveProject}>save .json</button>
+                <button type="button" onClick={() => projectInputRef.current?.click()}>load</button>
+                <button type="button" onClick={() => void copyShareLink()}>share link</button>
+                <input
+                  ref={projectInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void loadProject(file);
+                    event.target.value = "";
+                  }}
+                />
+              </div>
+            </section>
+          </div>
         </div>
       </main>
     </ToolShell>

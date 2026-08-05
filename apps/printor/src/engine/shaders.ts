@@ -13,6 +13,22 @@ void main() {
   gl_Position = vec4(position, 0.0, 1.0);
 }`;
 
+/**
+ * The whole print pipeline in a single pass.
+ *
+ * Ranges are already resolved to scalars on the CPU (see frameParams.ts), so
+ * nothing here draws random parameters — only the spatial noise used by grain
+ * and torn edges is generated in the shader, seeded by frame.
+ *
+ * Stage order matches the UI top to bottom:
+ *   motion blur → soft paper → grain & gain → torn edges
+ *   → wiggle → displacement → halftone → paper cuts → overlay
+ *
+ * Wiggle and displacement come after torn edges, but because every stage above
+ * them is a function of the sampling coordinate, they are applied by shifting
+ * that coordinate rather than by resampling an intermediate buffer. The result
+ * is identical and keeps the pipeline to one draw call.
+ */
 export const fragmentShader = `#version 300 es
 precision highp float;
 precision highp int;
@@ -21,23 +37,62 @@ in vec2 v_uv;
 out vec4 out_color;
 
 uniform sampler2D u_source;
+uniform sampler2D u_paper;
+uniform sampler2D u_displace;
+uniform sampler2D u_cutout;
+uniform sampler2D u_overlay;
+
+uniform vec2 u_resolution;
+/**
+ * Frame height over 1080. Every parameter denominated in pixels is multiplied
+ * by this, so "8 px of grain" means 8 px at 1080p and the proxy preview shows
+ * the same print as the full-resolution export instead of a finer one.
+ */
+uniform float u_pixel;
 uniform uint u_seed;
 uniform uint u_frame;
-uniform int u_order[4];
-uniform int u_enabled[4];
-uniform float u_chaos;
-uniform float u_brightness;
-uniform float u_contrast;
-uniform float u_gamma;
-uniform float u_noise;
-uniform float u_noise_size;
-uniform int u_print_mode;
-uniform float u_levels;
-uniform float u_threshold;
-uniform float u_halftone_scale;
-uniform float u_dot_gain;
-uniform float u_paper;
-uniform float u_banding;
+uniform int u_bypass;
+uniform int u_invert;
+uniform int u_ink;
+
+// 0 motion, 1 paper, 2 grain, 3 torn, 4 wiggle, 5 displace, 6 halftone, 7 cutout, 8 overlay
+uniform int u_active[9];
+
+uniform float u_motion_strength;
+uniform float u_motion_angle;
+uniform int u_motion_samples;
+uniform int u_motion_both;
+
+uniform vec4 u_paper_placement;   // scale, rotation, offset x, offset y
+uniform float u_paper_opacity;
+uniform int u_paper_blend;
+
+uniform float u_grain_amount;
+uniform float u_grain_gain;
+uniform float u_grain_size;
+
+uniform float u_torn_balance;
+uniform float u_torn_smoothness;
+uniform float u_torn_contrast;
+uniform float u_torn_roughness;
+
+uniform vec2 u_wiggle_offset;
+uniform float u_wiggle_rotation;
+
+uniform vec4 u_displace_placement;
+uniform float u_displace_amount;
+
+uniform float u_halftone_cell;
+uniform float u_halftone_angle;
+uniform float u_halftone_strength;
+
+uniform vec4 u_cutout_placement;
+uniform float u_cutout_feather;
+uniform int u_cutout_invert;
+
+uniform vec4 u_overlay_placement;
+uniform float u_overlay_opacity;
+uniform int u_overlay_blend;
 
 uint hash32(uint seed, uint frame, uint layer, uint channel) {
   uint value = seed ^ frame * 0x9e3779b9u ^ layer * 0x85ebca6bu ^ channel * 0xc2b2ae35u;
@@ -46,80 +101,195 @@ uint hash32(uint seed, uint frame, uint layer, uint channel) {
   return value ^ (value >> 15u);
 }
 
-float random_value(uint layer, uint channel) {
-  return float(hash32(u_seed, u_frame, layer, channel)) / 4294967296.0;
+// Stable per-cell value in 0..1. The +4096 bias keeps negative cells distinct.
+float cell_value(vec2 cell, uint layer) {
+  ivec2 c = ivec2(floor(cell)) + 4096;
+  uint key = uint(c.x) * 73856093u ^ uint(c.y) * 19349663u;
+  return float(hash32(u_seed, u_frame, layer, key)) / 4294967296.0;
 }
 
-float pixel_noise(vec2 pixel, float size) {
-  uvec2 cell = uvec2(floor(pixel / max(1.0, size)));
-  uint channel = cell.x * 1973u + cell.y * 9277u;
-  return float(hash32(u_seed, u_frame, 1u, channel)) / 4294967296.0;
+float value_noise(vec2 point, uint layer) {
+  vec2 cell = floor(point);
+  vec2 fraction = fract(point);
+  vec2 weight = fraction * fraction * (3.0 - 2.0 * fraction);
+  float a = cell_value(cell, layer);
+  float b = cell_value(cell + vec2(1.0, 0.0), layer);
+  float c = cell_value(cell + vec2(0.0, 1.0), layer);
+  float d = cell_value(cell + vec2(1.0, 1.0), layer);
+  return mix(mix(a, b, weight.x), mix(c, d, weight.x), weight.y);
+}
+
+// Three octaves is enough to read as torn fibre without banding.
+float fbm(vec2 point, uint layer) {
+  float sum = 0.0;
+  float amplitude = 0.5;
+  float total = 0.0;
+  for (int octave = 0; octave < 3; octave++) {
+    sum += value_noise(point, layer + uint(octave) * 7u) * amplitude;
+    total += amplitude;
+    point *= 2.03;
+    amplitude *= 0.5;
+  }
+  return sum / total;
+}
+
+mat2 rotation(float angle) {
+  return mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
 }
 
 float luminance(vec3 color) {
   return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
-float bayer4(vec2 pixel) {
-  int x = int(mod(pixel.x, 4.0));
-  int y = int(mod(pixel.y, 4.0));
-  int index = x + y * 4;
-  float matrix[16] = float[16](
-    0.0, 8.0, 2.0, 10.0,
-    12.0, 4.0, 14.0, 6.0,
-    3.0, 11.0, 1.0, 9.0,
-    15.0, 7.0, 13.0, 5.0
-  );
-  return (matrix[index] + 0.5) / 16.0;
-}
-
-vec3 apply_levels(vec3 color) {
-  color = (color - 0.5) * u_contrast + 0.5 + u_brightness;
-  return pow(clamp(color, 0.0, 1.0), vec3(1.0 / max(0.05, u_gamma)));
-}
-
-vec3 apply_noise(vec3 color) {
-  float variation = mix(1.0, 0.45 + random_value(1u, 2u), u_chaos);
-  float noise = pixel_noise(gl_FragCoord.xy, u_noise_size) - 0.5;
-  return clamp(color + noise * u_noise * variation, 0.0, 1.0);
-}
-
-vec3 apply_print(vec3 color) {
-  float gray = luminance(color);
-  if (u_print_mode == 0) {
-    float threshold = bayer4(gl_FragCoord.xy);
-    float shifted = gray + (threshold - u_threshold) / max(2.0, u_levels);
-    float quantized = floor(clamp(shifted, 0.0, 1.0) * (u_levels - 1.0) + 0.5) / (u_levels - 1.0);
-    return vec3(quantized);
+float blend_value(float base, float layer, int mode) {
+  if (mode == 0) return base * layer;
+  if (mode == 1) return 1.0 - (1.0 - base) * (1.0 - layer);
+  if (mode == 2) {
+    return base < 0.5 ? 2.0 * base * layer : 1.0 - 2.0 * (1.0 - base) * (1.0 - layer);
   }
-  float scale = max(3.0, u_halftone_scale);
-  vec2 cell = fract(gl_FragCoord.xy / scale) - 0.5;
-  float radius = sqrt(max(0.0, 1.0 - gray)) * 0.58 + u_dot_gain * 0.2;
-  float dot_value = smoothstep(radius + 0.08, radius - 0.08, length(cell));
-  return vec3(1.0 - dot_value);
+  // soft light, Photoshop's formulation
+  return layer < 0.5
+    ? base - (1.0 - 2.0 * layer) * base * (1.0 - base)
+    : base + (2.0 * layer - 1.0) * ((base < 0.25 ? ((16.0 * base - 12.0) * base + 4.0) * base : sqrt(base)) - base);
 }
 
-vec3 apply_paper(vec3 color) {
-  float frame_shift = (random_value(3u, 0u) - 0.5) * 60.0 * u_chaos;
-  float band = sin((gl_FragCoord.y + frame_shift) * 0.16) * u_banding;
-  float fine = (pixel_noise(gl_FragCoord.xy, 5.0) - 0.5) * u_paper;
-  float edge = smoothstep(0.0, 0.18, min(min(v_uv.x, 1.0 - v_uv.x), min(v_uv.y, 1.0 - v_uv.y)));
-  return clamp(color + fine + band * 0.25 - (1.0 - edge) * u_paper * 0.35, 0.0, 1.0);
+/**
+ * Maps a frame coordinate into a placed texture. Scale is a multiplier where
+ * 1.0 fits the frame, so 4.0 shows a quarter of the texture.
+ */
+vec2 placed_uv(vec2 uv, vec4 placement) {
+  vec2 point = uv - 0.5;
+  point = rotation(placement.y) * point;
+  point /= max(0.05, placement.x);
+  point += placement.zw;
+  return point + 0.5;
+}
+
+vec3 motion_sample(vec2 uv) {
+  if (u_active[0] == 0) return texture(u_source, uv).rgb;
+  vec2 direction = vec2(cos(u_motion_angle), sin(u_motion_angle)) * u_motion_strength * u_pixel / u_resolution;
+  vec3 sum = vec3(0.0);
+  float count = 0.0;
+  for (int index = 0; index < 24; index++) {
+    if (index >= u_motion_samples) break;
+    float position = float(index) / max(1.0, float(u_motion_samples - 1));
+    float offset = u_motion_both == 1 ? position - 0.5 : -position;
+    sum += texture(u_source, clamp(uv + direction * offset, 0.0, 1.0)).rgb;
+    count += 1.0;
+  }
+  return sum / max(1.0, count);
+}
+
+/**
+ * The silkscreen threshold.
+ *
+ * Grain and gain have already broken the tone into speckle; here a low
+ * frequency fbm pushes the luminance across the balance point so the boundary
+ * tears along paper-fibre shapes instead of cutting a clean line. Smoothness
+ * sets the fibre size, roughness how far the boundary can wander, contrast how
+ * hard the final transition is.
+ */
+float torn_edges(float value, vec2 uv) {
+  float feature = mix(2.5, 26.0, clamp(u_torn_smoothness, 0.0, 1.0)) * u_pixel;
+  vec2 point = uv * u_resolution / feature;
+  float fibre = fbm(point, 11u);
+  // A second, finer octave set keeps the edge from looking like smooth blobs.
+  float detail = fbm(point * 3.7, 29u);
+  float noise = mix(fibre, detail, 0.35) - 0.5;
+  float perturbed = value + noise * u_torn_roughness;
+  float width = mix(0.22, 0.004, clamp(u_torn_contrast, 0.0, 1.0));
+  return smoothstep(u_torn_balance - width, u_torn_balance + width, perturbed);
+}
+
+float halftone(float value, vec2 uv) {
+  vec2 point = rotation(u_halftone_angle) * (uv * u_resolution) / max(1.5, u_halftone_cell * u_pixel);
+  vec2 cell = fract(point) - 0.5;
+  float distance_to_centre = length(cell) * 2.0;
+  // Darker input grows the dot until neighbouring cells merge.
+  float radius = sqrt(clamp(1.0 - value, 0.0, 1.0)) * 1.25;
+  float dot_mask = smoothstep(radius + 0.12, radius - 0.12, distance_to_centre);
+  return mix(value, 1.0 - dot_mask, clamp(u_halftone_strength, 0.0, 1.0));
+}
+
+/**
+ * Gradient-based warp. Using the slope of the height map rather than its raw
+ * value pushes pixels away from ridges, which reads as paper buckling instead
+ * of a flat diagonal smear.
+ */
+vec2 displacement(vec2 uv) {
+  if (u_active[5] == 0) return vec2(0.0);
+  vec2 step_size = 1.5 / u_resolution;
+  vec2 base = placed_uv(uv, u_displace_placement);
+  vec2 scaled_step = step_size / max(0.05, u_displace_placement.x);
+  float left = texture(u_displace, base - vec2(scaled_step.x, 0.0)).r;
+  float right = texture(u_displace, base + vec2(scaled_step.x, 0.0)).r;
+  float down = texture(u_displace, base - vec2(0.0, scaled_step.y)).r;
+  float up = texture(u_displace, base + vec2(0.0, scaled_step.y)).r;
+  vec2 gradient = vec2(right - left, up - down);
+  return gradient * u_displace_amount * u_pixel / u_resolution;
 }
 
 void main() {
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
-  vec4 source = texture(u_source, uv);
-  vec3 color = source.rgb;
 
-  for (int index = 0; index < 4; index++) {
-    int effect = u_order[index];
-    if (u_enabled[effect] == 0) continue;
-    if (effect == 0) color = apply_levels(color);
-    if (effect == 1) color = apply_noise(color);
-    if (effect == 2) color = apply_print(color);
-    if (effect == 3) color = apply_paper(color);
+  if (u_bypass == 1) {
+    out_color = vec4(texture(u_source, uv).rgb, 1.0);
+    return;
   }
 
-  out_color = vec4(color, source.a);
+  // Wiggle and displacement act on everything upstream, so they move the
+  // coordinate the upstream stages read from.
+  vec2 print_uv = uv;
+  if (u_active[4] == 1) {
+    print_uv = rotation(u_wiggle_rotation) * (print_uv - 0.5) + 0.5 - u_wiggle_offset * u_pixel / u_resolution;
+  }
+  print_uv += displacement(uv);
+
+  vec2 clamped = clamp(print_uv, 0.0, 1.0);
+  float value = luminance(motion_sample(clamped));
+
+  if (u_active[1] == 1) {
+    float stock = texture(u_paper, placed_uv(print_uv, u_paper_placement)).r;
+    value = mix(value, blend_value(value, stock, u_paper_blend), clamp(u_paper_opacity, 0.0, 1.0));
+  }
+
+  if (u_active[2] == 1) {
+    value = (value - 0.5) * u_grain_gain + 0.5;
+    // Interpolated rather than per-pixel: white noise thresholds into television
+    // static, while a smoothed field breaks the fill into ink-sized clumps.
+    vec2 grain_point = print_uv * u_resolution / max(1.0, u_grain_size * u_pixel);
+    float noise = mix(value_noise(grain_point, 3u), value_noise(grain_point * 2.6, 41u), 0.4);
+    value += (noise - 0.5) * u_grain_amount * 2.0;
+  }
+
+  if (u_active[3] == 1) value = torn_edges(value, print_uv);
+  value = clamp(value, 0.0, 1.0);
+
+  if (u_active[6] == 1) value = halftone(value, uv);
+
+  float mask = 1.0;
+  if (u_active[7] == 1) {
+    float shape = texture(u_cutout, placed_uv(uv, u_cutout_placement)).r;
+    float feather = max(0.001, u_cutout_feather);
+    mask = smoothstep(0.5 - feather, 0.5 + feather, shape);
+    if (u_cutout_invert == 1) mask = 1.0 - mask;
+  }
+
+  if (u_active[8] == 1) {
+    float stock = texture(u_overlay, placed_uv(uv, u_overlay_placement)).r;
+    value = mix(value, blend_value(value, stock, u_overlay_blend), clamp(u_overlay_opacity, 0.0, 1.0));
+  }
+
+  value = clamp(value, 0.0, 1.0);
+  if (u_invert == 1) value = 1.0 - value;
+
+  if (u_ink == 1) {
+    // Keep the white ink, black becomes transparent.
+    out_color = vec4(1.0, 1.0, 1.0, value * mask);
+  } else if (u_ink == 2) {
+    // Keep the black ink, white becomes transparent.
+    out_color = vec4(0.0, 0.0, 0.0, (1.0 - value) * mask);
+  } else {
+    out_color = vec4(vec3(value), mask);
+  }
 }`;

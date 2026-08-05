@@ -1,4 +1,4 @@
-import { ToolShell } from "@sazonov/shell";
+import { ToolShell } from "./shared/Shell";
 
 function available(value: boolean) {
   return value ? "yes" : "no";
@@ -33,7 +33,8 @@ export function Support() {
         </table>
         <section>
           <h2>Current release</h2>
-          <p>Import MP4, MOV, WebM, GIF, PNG, JPEG, or WebP. Preview effects on the GPU and export a deterministic PNG sequence in a ZIP file.</p>
+          <p>Import MP4, MOV, WebM, GIF, PNG, JPEG, or WebP. The fixed GPU pipeline applies motion blur, a custom texture, color dither, a paper scan, and a generated cutout before exporting a deterministic PNG sequence ZIP.</p>
+          <p>Texture and paper inputs accept separate PNG, JPEG, or WebP scans. Every checked variation is reproduced by the current seed.</p>
           <p>Video decoding support depends on codecs built into the browser. If a MOV or MP4 does not open, convert it to H.264 MP4 or export an image sequence.</p>
         </section>
         <section>
