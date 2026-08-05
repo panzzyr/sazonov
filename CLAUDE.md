@@ -52,7 +52,7 @@ no uploads. Adding any of those breaks the CSP tests.
 pnpm workspace (`apps/*`, `packages/*`):
 
 - `apps/site/` — Eleventy v3 bilingual portfolio → `sazonov.space`.
-- `apps/printor/` — Vite + React 19 + TypeScript + WebGL2 tool → `printor.sazonov.space`.
+- `apps/printor/` — Vite + React 19 + TypeScript + WebGL2 tool → `sazonov.space/printor/`.
 - `packages/tokens/tokens.css` — design tokens, read **by path** by `scripts/build-css.mjs`.
 - `packages/shell/` — legacy shared tool shell. Nothing imports `@sazonov/shell` or
   `@sazonov/tokens` by package name anymore; printor vendors its own copies in
@@ -61,9 +61,12 @@ pnpm workspace (`apps/*`, `packages/*`):
 - `docs/decisions.md` — ADRs. New dependencies or spec deviations get an entry.
 - `00-CONTEXT.md`, `01-SPEC-site.md`, `02-SPEC-printor.md`, `03-CONTENT.md` — product
   source of truth; read `00-CONTEXT.md` first.
-- `printor/` (untracked, has its own `.git`) — a standalone checkout mirroring
-  `apps/printor/` for independent deployment. Not part of the workspace; edit
-  `apps/printor/` unless you specifically mean the mirror.
+**One repository, one Pages deployment.** `pnpm build` builds the site, builds
+printor, then `scripts/nest-printor.mjs` copies `apps/printor/dist/` into
+`apps/site/_site/printor/`. printor is built with Vite `base: "/printor/"`;
+`PRINTOR_BASE=/` overrides it for a root domain. Anything referencing an asset
+at runtime must go through `import.meta.env.BASE_URL` — a root-absolute path
+breaks the sub-path deployment.
 
 ## Generated files — never edit by hand
 

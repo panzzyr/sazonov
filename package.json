@@ -8,7 +8,7 @@
     "dev": "pnpm --filter @sazonov/printor dev",
     "dev:site": "pnpm --filter @sazonov/site dev",
     "dev:printor": "pnpm --filter @sazonov/printor dev",
-    "build": "pnpm --filter @sazonov/site build && node scripts/budget.mjs && pnpm --filter @sazonov/printor build",
+    "build": "pnpm --filter @sazonov/site build && node scripts/budget.mjs && pnpm --filter @sazonov/printor build && node scripts/nest-printor.mjs",
     "build:drafts": "pnpm --filter @sazonov/site build:drafts && node scripts/budget.mjs",
     "lint": "pnpm --filter @sazonov/site lint && pnpm --filter @sazonov/printor lint",
     "test": "node --test tests/*.test.mjs && pnpm --filter @sazonov/printor test",

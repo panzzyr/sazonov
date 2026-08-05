@@ -44,3 +44,26 @@ test("metadata, CV, and discovery files build", async () => {
     assert.ok(info.size > 0, file);
   }
 });
+
+test("printor is nested under /printor/ and built for that sub-path", async () => {
+  const html = await page("/printor/");
+  // A root-absolute asset path here would 404 in production, which is the one
+  // way this deployment shape breaks silently.
+  assert.match(html, /src="\/printor\/assets\//, "printor script is not base-aware");
+  assert.doesNotMatch(html, /src="\/assets\//, "printor emitted root-absolute assets");
+  assert.match(html, /connect-src 'none'/, "printor lost its CSP");
+
+  await stat(path.join(output, "printor/support/index.html"));
+  await stat(path.join(output, "printor/textures/manifest.json"));
+
+  const manifest = JSON.parse(await readFile(path.join(output, "printor/textures/manifest.json"), "utf8"));
+  assert.ok(manifest.textures.length > 0, "texture library is empty");
+  for (const texture of manifest.textures.slice(0, 5)) {
+    await stat(path.join(output, "printor/textures", texture.file));
+  }
+});
+
+test("the portfolio links printor at its deployed path", async () => {
+  const html = await page("/tools/");
+  assert.match(html, /href="\/printor\/"/);
+});

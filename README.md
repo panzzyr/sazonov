@@ -5,7 +5,7 @@ tools.
 
 - `apps/site/` — Eleventy portfolio deployed to `sazonov.space`.
 - `apps/printor/` — React/WebGL2 application deployed to
-  `printor.sazonov.space`.
+  `sazonov.space/printor/`.
 - `packages/tokens/` — shared monochrome design tokens.
 - `packages/shell/` — reusable shell for browser tools.
 
@@ -17,9 +17,10 @@ pnpm dev:site
 pnpm dev:printor
 ```
 
-Run `pnpm check` before submitting changes. Production output is written to
-`apps/site/_site/` and `apps/printor/dist/`. The build fails when the compressed
-English homepage exceeds 14,336 bytes.
+Run `pnpm check` before submitting changes. `pnpm build` writes the portfolio to
+`apps/site/_site/` and nests the built printor at `apps/site/_site/printor/`, so
+one Pages deployment serves both. The build fails when the compressed English
+homepage exceeds 14,336 bytes or printor exceeds 300 KB gzip.
 
 ## Configuration
 

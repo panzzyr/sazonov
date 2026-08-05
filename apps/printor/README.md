@@ -107,6 +107,13 @@ keep `connect-src 'none'`; `scripts/budget.mjs` fails the build otherwise.
 
 ## Publish
 
-Push `main`; the Pages workflow builds and deploys `dist/`. In GitHub, choose
-**Settings → Pages → Source: GitHub Actions**, then set the custom domain to
-`printor.sazonov.space`. The committed `public/CNAME` preserves that domain.
+printor ships as part of the portfolio deployment at `sazonov.space/printor/`,
+not as its own site. From the repository root, `pnpm build` builds both and
+nests this app's `dist/` into `apps/site/_site/printor/`.
+
+The base path is baked in at build time (`base: "/printor/"` in
+`vite.config.ts`). Build with `PRINTOR_BASE=/ pnpm build` to serve it from a
+root domain instead. Runtime asset lookups go through `import.meta.env.BASE_URL`,
+so they follow whichever base was used.
+
+See `docs/publishing/README.md` for the Pages and DNS setup.

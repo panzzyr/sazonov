@@ -7,7 +7,7 @@ export default [
       en: "Turns video into printed-and-scanned frames. Runs on your device.",
       ru: "Превращает видео в напечатанные и отсканированные кадры. Работает на вашем устройстве.",
     },
-    url: "https://printor.sazonov.space",
+    url: "/printor/",
   },
   {
     slug: "proxiguesse",

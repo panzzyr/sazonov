@@ -1,5 +1,20 @@
 # Architecture decisions
 
+## 2026-08-05 — One Pages deployment, printor on a sub-path
+
+- **Decision:** Publish printor at `sazonov.space/printor/` from the portfolio's
+  Pages deployment instead of a separate repository and subdomain. `pnpm build`
+  nests `apps/printor/dist/` into `apps/site/_site/printor/`.
+- **Alternatives:** A second repository mirroring `apps/printor/` and deploying
+  to `printor.sazonov.space`, which is what the first attempt set up.
+- **Reason:** The separate repository existed to dodge a size limit that is not
+  real — the converted texture library is 15 MB against a 1 GB Pages ceiling. One
+  repository means one `pnpm check`, no mirror to keep in sync, and no second
+  DNS record or certificate to wait on.
+- **Consequences:** printor is built with `base: "/printor/"`, so every runtime
+  asset lookup has to go through `import.meta.env.BASE_URL`; a root-absolute path
+  silently breaks the sub-path. `PRINTOR_BASE=/` restores a root-domain build.
+
 ## 2026-08-05 — Range-based parameters resolved on the CPU
 
 - **Decision:** Every effect parameter is a min/max range; the concrete value

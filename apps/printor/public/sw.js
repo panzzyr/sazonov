@@ -1,5 +1,8 @@
-const CACHE = "printor-v1";
-const CORE = ["/", "/support/", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "printor-v2";
+// The worker is served from the app's base, so its own path gives the prefix.
+// That keeps the same file correct at / and at /printor/.
+const BASE = self.location.pathname.replace(/sw\.js$/, "");
+const CORE = [BASE, `${BASE}support/`, `${BASE}manifest.webmanifest`, `${BASE}icon.svg`];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)));
