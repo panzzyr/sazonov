@@ -50,7 +50,10 @@ type PrintorStore = {
   lastEditAt: number;
 
   selectStage: (id: StageId) => void;
-  setGlobal: <Key extends "seed" | "targetFps" | "invert">(key: Key, value: Settings[Key]) => void;
+  setGlobal: <Key extends "seed" | "targetFps" | "stillFrames" | "invert">(
+    key: Key,
+    value: Settings[Key],
+  ) => void;
   updateStage: <Key extends StageId>(id: Key, patch: Partial<Settings[Key]>, editKey?: string) => void;
   setStageEnabled: (id: StageId, enabled: boolean) => void;
   setFrameChance: (id: StageId, chance: number) => void;

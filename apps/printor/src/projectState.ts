@@ -8,6 +8,7 @@
 
 import {
   defaultSettings,
+  maxExportFrames,
   maxFps,
   minFps,
   stageOrder,
@@ -113,6 +114,9 @@ export function parseSettings(value: unknown): Settings {
 
   settings.seed = number(incoming.seed, defaultSettings.seed, 0, 0xffff_ffff) >>> 0;
   settings.targetFps = Math.round(number(incoming.targetFps, defaultSettings.targetFps, minFps, maxFps));
+  settings.stillFrames = Math.round(
+    number(incoming.stillFrames, defaultSettings.stillFrames, 1, maxExportFrames),
+  );
   settings.invert = typeof incoming.invert === "boolean" ? incoming.invert : defaultSettings.invert;
 
   if (isObject(incoming.stages)) {

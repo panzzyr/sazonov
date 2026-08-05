@@ -20,7 +20,9 @@ rerolls the seed, and `e` exports.
 
 Time is posterized first: the source is sampled at the target frame rate (4–16
 fps), so a 24 fps clip exported at 8 fps holds each frame for three source
-frames. Then every output frame runs through nine stages, in this fixed order:
+frames. A still image has no duration, so you choose how many frames to
+generate from it instead. Then every output frame runs through nine stages, in
+this fixed order:
 
 | # | Stage | What it does |
 | --- | --- | --- |
@@ -42,6 +44,10 @@ collapses to one number drawn from `hash(seed, frame, stage, channel)`. Texture
 stages work the same way: you select a pool of library images and each frame
 draws one. That is what makes every frame print differently while a given seed
 still reproduces the sequence exactly.
+
+It is also what makes a still image usable as a source: nothing in the frame
+moves, but every parameter is redrawn, so a single photograph becomes an
+animation of the print itself.
 
 Stages 5 and 6 come after the threshold but are applied by shifting the
 sampling coordinate the upstream stages read from, which is equivalent and

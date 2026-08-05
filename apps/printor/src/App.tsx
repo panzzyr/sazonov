@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PrivacyLine, ToolShell } from "./shared/Shell";
+import { ToolShell } from "./shared/Shell";
 import { PipelinePanel } from "./components/PipelinePanel";
 import { StageInspector } from "./components/StageInspector";
 import { SliderControl } from "./components/RangeControl";
@@ -96,9 +96,12 @@ export function App() {
   const [inks, setInks] = useState<ExportInk[]>(["flat"]);
 
   const totalFrames = media
-    ? media.kind === "image"
-      ? 1
-      : Math.max(1, Math.ceil(media.duration * settings.targetFps))
+    ? frameCount(
+        media.kind === "video"
+          ? { kind: "video", video: media.video, duration: media.duration }
+          : { kind: "image", bitmap: media.bitmap },
+        settings,
+      )
     : 1;
 
   /**
@@ -204,6 +207,11 @@ export function App() {
     mediaRef.current = media;
   }, [media]);
 
+  // Shortening a still sequence can strand the playhead past the last frame.
+  useEffect(() => {
+    setFrame((current) => Math.min(current, totalFrames - 1));
+  }, [totalFrames]);
+
   useEffect(() => () => {
     const loaded = mediaRef.current;
     if (loaded?.kind === "video") URL.revokeObjectURL(loaded.url);
@@ -212,7 +220,7 @@ export function App() {
 
   /** Playback steps whole output frames, so what plays is what exports. */
   useEffect(() => {
-    if (!playing || !media || media.kind !== "video") return;
+    if (!playing || !media || totalFrames < 2) return;
     let cancelled = false;
     let timer = 0;
     let current = frame;
@@ -220,13 +228,15 @@ export function App() {
     const step = async () => {
       if (cancelled) return;
       current = (current + 1) % totalFrames;
-      const time = Math.min(media.duration, current / settings.targetFps);
-      media.video.currentTime = time;
-      await new Promise<void>((resolve) => {
-        media.video.addEventListener("seeked", () => resolve(), { once: true });
-        setTimeout(resolve, 400);
-      });
-      if (cancelled) return;
+      // A still has nothing to seek: the frame index alone changes the print.
+      if (media.kind === "video") {
+        media.video.currentTime = Math.min(media.duration, current / settings.targetFps);
+        await new Promise<void>((resolve) => {
+          media.video.addEventListener("seeked", () => resolve(), { once: true });
+          setTimeout(resolve, 400);
+        });
+        if (cancelled) return;
+      }
       setFrame(current);
       timer = window.setTimeout(step, 1000 / settings.targetFps);
     };
@@ -337,7 +347,7 @@ export function App() {
     const source: ExportSource = target.kind === "video"
       ? { kind: "video", video: target.video, duration: target.duration }
       : { kind: "image", bitmap: target.bitmap };
-    const total = frameCount(source, settings.targetFps);
+    const total = frameCount(source, settings);
     const stem = target.file.name.replace(/\.[^.]+$/, "") || "printor";
 
     setExportState({ completed: 0, total, label: format === "mp4" ? "encoding" : "rendering" });
@@ -494,7 +504,7 @@ export function App() {
 
             <div className="transport">
               <button type="button" onClick={() => goToFrame(frame - 1)} disabled={!media} aria-label="Previous frame">←</button>
-              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={media?.kind !== "video"}>
+              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={!media || totalFrames < 2}>
                 {playing ? "pause" : "play"}
               </button>
               <button type="button" onClick={() => goToFrame(frame + 1)} disabled={!media} aria-label="Next frame">→</button>
@@ -510,7 +520,6 @@ export function App() {
               />
             </div>
 
-            <PrivacyLine />
             {notice && <p className="notice" role="status">{notice}</p>}
             {error && <p className="error" role="alert">{error}</p>}
           </section>
@@ -534,6 +543,23 @@ export function App() {
                 unit=" fps"
                 onChange={(value) => setGlobal("targetFps", value)}
               />
+
+              {media?.kind === "image" && (
+                <>
+                  <SliderControl
+                    label="frames"
+                    value={settings.stillFrames}
+                    min={1}
+                    max={240}
+                    onChange={(value) => setGlobal("stillFrames", value)}
+                  />
+                  <p className="control-hint">
+                    A still has nothing to animate, so each frame differs only by
+                    its own draw from every range — {(settings.stillFrames / settings.targetFps).toFixed(1)}s
+                    at {settings.targetFps} fps.
+                  </p>
+                </>
+              )}
 
               <label className="toggle-control">
                 <input

@@ -135,3 +135,23 @@ describe("texture selection", () => {
     }
   });
 });
+
+describe("still image sequences", () => {
+  it("a still yields as many distinct frames as requested", () => {
+    const settings = withTextures();
+    settings.stillFrames = 30;
+    // Nothing in the source changes, so every difference has to come from the
+    // per-frame draws. If they collapsed, a still would print 30 identical frames.
+    const prints = new Set<string>();
+    for (let frame = 0; frame < settings.stillFrames; frame += 1) {
+      const params = resolveFrame(settings, frame);
+      prints.add(JSON.stringify([
+        params.torn.balance,
+        params.grain.grain,
+        params.paper.textureId,
+        params.paper.rotation,
+      ]));
+    }
+    expect(prints.size).toBe(settings.stillFrames);
+  });
+});

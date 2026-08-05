@@ -10,18 +10,24 @@
 import { Renderer } from "../engine/Renderer";
 import { resolveFrame } from "../engine/frameParams";
 import { TextureCache } from "../engine/textureCache";
-import { textureStages, type ExportInk, type Settings } from "../types";
+import { maxExportFrames, textureStages, type ExportInk, type Settings } from "../types";
 
 export type ExportSource =
   | { kind: "video"; video: HTMLVideoElement; duration: number }
   | { kind: "image"; bitmap: ImageBitmap };
 
-/** Guards against a long clip exhausting memory mid-export. */
-export const MAX_EXPORT_FRAMES = 900;
+export const MAX_EXPORT_FRAMES = maxExportFrames;
 
-export function frameCount(source: ExportSource, targetFps: number) {
-  if (source.kind === "image") return 1;
-  return Math.min(MAX_EXPORT_FRAMES, Math.max(1, Math.ceil(source.duration * targetFps)));
+/**
+ * A video is as long as its duration at the target rate. A still has no
+ * duration, so the length is whatever the user asked for — each frame differs
+ * because the parameters are redrawn, not because the source moved.
+ */
+export function frameCount(source: ExportSource, settings: Settings) {
+  const requested = source.kind === "image"
+    ? Math.round(settings.stillFrames)
+    : Math.ceil(source.duration * settings.targetFps);
+  return Math.min(maxExportFrames, Math.max(1, requested));
 }
 
 function seek(video: HTMLVideoElement, time: number) {
@@ -69,7 +75,7 @@ export type RenderedFrame = {
  */
 export async function* renderSequence(options: SequenceOptions): AsyncGenerator<RenderedFrame> {
   const { source, settings, ink, cache, signal } = options;
-  const total = frameCount(source, settings.targetFps);
+  const total = frameCount(source, settings);
 
   const canvas = document.createElement("canvas");
   canvas.width = options.width;

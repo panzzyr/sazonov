@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeSettings, encodeSettings, parseSettings } from "../src/projectState";
 import { initialSettings } from "../src/store";
-import { defaultSettings, maxFps, minFps } from "../src/types";
+import { defaultSettings, maxExportFrames, maxFps, minFps } from "../src/types";
 
 describe("project encoding", () => {
   it("round-trips a project through the share encoding", () => {
@@ -73,5 +73,23 @@ describe("untrusted project input", () => {
       + settings.displace.textures.length
       + settings.overlay.textures.length;
     expect(total).toBeGreaterThan(0);
+  });
+});
+
+describe("still frame count", () => {
+  it("round-trips through the share encoding", () => {
+    const settings = initialSettings();
+    settings.stillFrames = 48;
+    expect(decodeSettings(encodeSettings(settings)).stillFrames).toBe(48);
+  });
+
+  it("clamps to at least one frame and at most the export ceiling", () => {
+    expect(parseSettings({ settings: { stillFrames: 0 } }).stillFrames).toBe(1);
+    expect(parseSettings({ settings: { stillFrames: -20 } }).stillFrames).toBe(1);
+    expect(parseSettings({ settings: { stillFrames: 99999 } }).stillFrames).toBe(maxExportFrames);
+  });
+
+  it("rounds a fractional count", () => {
+    expect(parseSettings({ settings: { stillFrames: 12.7 } }).stillFrames).toBe(13);
   });
 });

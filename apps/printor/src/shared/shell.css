@@ -65,18 +65,9 @@
   text-transform: uppercase;
 }
 
-.tool-footer p {
-  margin: 0;
-}
-
 .tool-footer a {
   margin-left: auto;
   color: inherit;
-}
-
-.privacy-line {
-  color: var(--ink-2);
-  font: var(--step--2)/1.5 var(--font-mono);
 }
 
 @media (max-width: 42rem) {

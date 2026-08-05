@@ -150,6 +150,11 @@ export type Settings = {
   seed: number;
   /** Time posterization, 4..16 frames per second. */
   targetFps: number;
+  /**
+   * How many frames to generate from a still image. The source never changes,
+   * so the variation comes entirely from the per-frame parameter draws.
+   */
+  stillFrames: number;
   /** Invert the finished grayscale frame. */
   invert: boolean;
   stages: Record<StageId, Stage>;
@@ -179,6 +184,9 @@ export type MediaKind = "video" | "image";
 export const minFps = 4;
 export const maxFps = 16;
 
+/** Guards against a long sequence exhausting memory mid-export. */
+export const maxExportFrames = 900;
+
 function range(min: number, max: number): Range {
   return { min, max };
 }
@@ -190,6 +198,7 @@ function stage(enabled: boolean, frameChance = 1): Stage {
 export const defaultSettings: Settings = {
   seed: 8471,
   targetFps: 12,
+  stillFrames: 24,
   invert: false,
   stages: {
     motion: stage(true),

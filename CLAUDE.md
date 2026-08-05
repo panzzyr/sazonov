@@ -92,7 +92,10 @@ fixed order that cannot be reordered:
 → halftone → paper cuts → overlay`
 
 Time is posterized before any of it: frame N is the source at `N / targetFps`
-seconds (4..16 fps).
+seconds (4..16 fps). A still source has no duration, so `settings.stillFrames`
+sets the sequence length instead — `frameCount()` in `export/renderSequence.ts`
+is the single place that decides, and both the preview and every export path go
+through it.
 
 **The central idea: every numeric parameter is a `Range`, not a value.** For each
 frame the range collapses to one number drawn from `hash(seed, frame, stage,
