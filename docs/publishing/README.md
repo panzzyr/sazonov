@@ -7,11 +7,39 @@ The portfolio and printor are separate repositories and separate Pages sites:
 
 Both repositories deploy automatically from `main` with GitHub Actions.
 
+`panzzyr/sazonov` is the monorepo and the source of truth; its Pages workflow
+publishes `apps/site/`. `panzzyr/printor` is a standalone mirror of
+`apps/printor/`, kept in sync with:
+
+```sh
+rsync -a --delete --exclude node_modules/ --exclude dist/ --exclude .git/ \
+  apps/printor/ printor/
+```
+
 ## GitHub settings
 
 In each repository, open **Settings → Pages** and select **GitHub Actions** as
 the source. After the first successful workflow run, enter the corresponding
 custom domain and enable **Enforce HTTPS** when GitHub makes it available.
+
+Two things block a deployment if they are missing:
+
+- **Pages must be enabled before the workflow runs**, otherwise
+  `actions/configure-pages` fails with `Get Pages site failed`.
+- **Pages on a private repository needs a paid GitHub plan.** A free account
+  must make the repository public first.
+
+The custom domain is not read from the committed `public/CNAME` when deploying
+through Actions — set it in **Settings → Pages**, or with:
+
+```sh
+gh api -X PUT repos/panzzyr/printor/pages -f cname=printor.sazonov.space
+```
+
+Until a root domain is attached, the `panzzyr.github.io/printor/` URL serves a
+broken page: the build emits root-absolute asset paths (`/assets/...`), which do
+not resolve under a subpath. This is expected and resolves itself once the
+custom domain is live.
 
 ## DNS records
 
@@ -52,6 +80,8 @@ git commit -m "feat: describe the change"
 git push
 ```
 
-The Actions tab shows build and deployment status. Repository texture scans
-belong in `printor/public/textures/`; one-off scans loaded in the browser never
-leave the device and are not persisted to Git.
+The Actions tab shows build and deployment status.
+
+The committed texture library lives in `apps/printor/public/textures/` and is
+generated from full-resolution scans under `assets/`, which stay out of git.
+Regenerate it with `node scripts/build-texture-library.mjs` after adding a scan.
