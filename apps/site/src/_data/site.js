@@ -2,8 +2,9 @@ const url = process.env.SITE_URL || "https://sazonov.space";
 
 export default {
   name: "Stepan Sazonov",
+  nameRu: "Степан Сазонов",
   url,
-  description: "Computational physicist and R&D engineer working on nonlinear dynamics, simulation software, and local-first creative tools.",
+  description: "Free browser tools that run on your device. Nothing is uploaded.",
   author: "Stepan Sazonov",
   year: new Date().getFullYear(),
   sourceUrl: "",

@@ -30,8 +30,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @sazonov/site build
-      - run: node scripts/budget.mjs
+      # `pnpm build` is the whole deployment: it builds the site, checks the
+      # homepage budget, builds printor, and nests it at _site/printor/.
+      # Building only the site here is what made /printor/ a 404.
+      - run: pnpm build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

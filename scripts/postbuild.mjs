@@ -17,7 +17,7 @@ const ogSvg = Buffer.from(`
     <rect x="88" y="80" width="104" height="104" fill="#17181A"/>
     <text x="140" y="154" text-anchor="middle" font-family="Arial" font-size="66" font-weight="700" fill="#F2F1EE">S</text>
     <text x="88" y="352" font-family="Arial" font-size="76" font-weight="600" fill="#17181A">Stepan Sazonov</text>
-    <text x="88" y="414" font-family="Courier New" font-size="25" letter-spacing="3" fill="#74777B">COMPUTATIONAL PHYSICS · R&amp;D · TOOLS</text>
+    <text x="88" y="414" font-family="Courier New" font-size="25" letter-spacing="3" fill="#74777B">SAZONOV.SPACE</text>
     <line x1="88" x2="1112" y1="505" y2="505" stroke="#17181A" stroke-width="2"/>
   </svg>`);
 await sharp(ogSvg).png().toFile(path.join(output, "og.png"));

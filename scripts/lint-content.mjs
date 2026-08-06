@@ -7,7 +7,16 @@ const contentRoot = path.join(root, "apps/site/src/content");
 const problems = [];
 
 async function visit(directory) {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
+  // The site currently ships no Markdown content. Keep the linter in place so
+  // it starts checking again the moment a content directory reappears.
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  for (const entry of entries) {
     const file = path.join(directory, entry.name);
     if (entry.isDirectory()) await visit(file);
     if (!entry.isFile() || !entry.name.endsWith(".md")) continue;

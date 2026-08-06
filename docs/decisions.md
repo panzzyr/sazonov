@@ -1,5 +1,31 @@
 # Architecture decisions
 
+## 2026-08-06 — The site is a home page, an about page, and printor
+
+- **Decision:** Strip the portfolio to two routes per language. Posts, projects,
+  the tools index, the CV page, and both Atom feeds are gone; `/about/` carries
+  the whole biography, the links to kmbnt.ru and victim.team, and the CV PDF.
+- **Alternatives:** Keep the sections and leave them empty, or hide them behind
+  `draft: true`.
+- **Reason:** The site exists to hand people printor. Section pages that list
+  nothing are worse than no section pages.
+- **Consequences:** `apps/site/src/content/` no longer exists, so the `posts` and
+  `projects` collections, the `whereLang`/`limit`/`readingTime` filters, and the
+  Temml math plugin went with them — `markdown-it` and `temml` are no longer
+  dependencies. `scripts/lint-content.mjs` now returns quietly when the content
+  directory is absent, so restoring Markdown content restores its checks.
+
+## 2026-08-06 — The deploy workflow runs the same build as CI
+
+- **Decision:** `.github/workflows/pages.yml` runs `pnpm build` rather than
+  `pnpm --filter @sazonov/site build` plus a budget check.
+- **Reason:** The narrower command skipped the printor build and
+  `scripts/nest-printor.mjs`, so the deployed artifact never contained
+  `_site/printor/` and `sazonov.space/printor` returned 404 while `pnpm check`
+  passed locally and in CI.
+- **Consequences:** Deploys take longer because they build printor, and the two
+  workflows can no longer drift on what "built" means.
+
 ## 2026-08-05 — One Pages deployment, printor on a sub-path
 
 - **Decision:** Publish printor at `sazonov.space/printor/` from the portfolio's

@@ -17,18 +17,12 @@ importers:
       lightningcss:
         specifier: ^1.30.1
         version: 1.33.0
-      markdown-it:
-        specifier: ^14.1.0
-        version: 14.3.0
       sharp:
         specifier: ^0.34.3
         version: 0.34.5
       svgo:
         specifier: ^4.0.0
         version: 4.0.2
-      temml:
-        specifier: ^0.12.1
-        version: 0.12.2
 
   apps/printor:
     dependencies:
@@ -1498,10 +1492,6 @@ packages:
     resolution: {integrity: sha512-ekx94z1rRc5LDi6oSUaeRnYhd0UOJxdtQCL2rF8xpWxD3TPAsISWOrxezqGovqS38GRZOdpDfvQe3ts6F7nsng==}
     engines: {node: '>=16'}
     hasBin: true
-
-  temml@0.12.2:
-    resolution: {integrity: sha512-NTEeHEiV3WLuWm0/MqzJLM+Y83IWgGag5vxudkzMSSJaxkdMKsFbIC/elT4mGazYKMaQA8qm/EjpIDPLfqjlRw==}
-    engines: {node: '>=18.13.0'}
 
   terser@5.49.0:
     resolution: {integrity: sha512-SNiDnXyHSrxVcIOtVbULzcTmniUiwcV7Nwdyj1twVubeTmbjoa8p69KKDpfkdoOavuM4/GRm1+ykI8qqnavHoA==}
@@ -3024,8 +3014,6 @@ snapshots:
       csso: 5.0.5
       picocolors: 1.1.1
       sax: 1.6.1
-
-  temml@0.12.2: {}
 
   terser@5.49.0:
     dependencies:

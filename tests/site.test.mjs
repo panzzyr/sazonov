@@ -11,10 +11,16 @@ async function page(url) {
 }
 
 test("English and Russian core routes build", async () => {
-  for (const route of ["/", "/posts/", "/projects/", "/tools/", "/about/", "/cv/", "/ru/", "/ru/posts/", "/ru/projects/", "/ru/tools/", "/ru/about/", "/ru/cv/"]) {
+  for (const route of ["/", "/about/", "/ru/", "/ru/about/"]) {
     const html = await page(route);
     assert.match(html, /<!doctype html>/i, route);
     assert.match(html, /<main id="content">/, route);
+  }
+});
+
+test("the site stays down to a home page and an about page", async () => {
+  for (const route of ["/posts/", "/projects/", "/tools/", "/cv/", "/ru/posts/", "/ru/projects/", "/ru/tools/", "/ru/cv/"]) {
+    await assert.rejects(page(route), { code: "ENOENT" }, `${route} should no longer build`);
   }
 });
 
@@ -27,22 +33,26 @@ test("homepages are self-contained and language-linked", async () => {
   assert.match(russian, /hreflang="en"/);
 });
 
-test("published articles and project translations exist", async () => {
-  await stat(path.join(output, "posts/why-this-site-weighs-14-kb/index.html"));
-  await stat(path.join(output, "ru/posts/why-this-site-weighs-14-kb/index.html"));
-  await stat(path.join(output, "projects/magnetic-breathers/index.html"));
-  await stat(path.join(output, "ru/projects/magnetic-breathers/index.html"));
-});
-
-test("draft posts stay out of production", async () => {
-  await assert.rejects(stat(path.join(output, "posts/what-a-breather-is/index.html")), { code: "ENOENT" });
+test("both about pages carry the outside links and the CV", async () => {
+  for (const route of ["/about/", "/ru/about/"]) {
+    const html = await page(route);
+    assert.match(html, /https:\/\/kmbnt\.ru/, route);
+    assert.match(html, /https:\/\/victim\.team/, route);
+    assert.match(html, /href="\/cv\.pdf"/, route);
+    assert.match(html, /href="\/printor\/"/, route);
+  }
 });
 
 test("metadata, CV, and discovery files build", async () => {
-  for (const file of ["feed.xml", "ru/feed.xml", "sitemap.xml", "robots.txt", "404.html", "og.png", "cv.pdf", "_headers"]) {
+  for (const file of ["sitemap.xml", "robots.txt", "404.html", "og.png", "cv.pdf", "_headers", "CNAME"]) {
     const info = await stat(path.join(output, file));
     assert.ok(info.size > 0, file);
   }
+});
+
+test("the custom domain is what Pages will serve", async () => {
+  const cname = await readFile(path.join(output, "CNAME"), "utf8");
+  assert.equal(cname.trim(), "sazonov.space");
 });
 
 test("printor is nested under /printor/ and built for that sub-path", async () => {
@@ -63,7 +73,9 @@ test("printor is nested under /printor/ and built for that sub-path", async () =
   }
 });
 
-test("the portfolio links printor at its deployed path", async () => {
-  const html = await page("/tools/");
-  assert.match(html, /href="\/printor\/"/);
+test("every page links printor at its deployed path", async () => {
+  for (const route of ["/", "/about/", "/ru/", "/ru/about/"]) {
+    const html = await page(route);
+    assert.match(html, /href="\/printor\/"/, route);
+  }
 });

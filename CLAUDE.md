@@ -147,24 +147,37 @@ A service worker registers in production builds only.
 
 ## Site architecture
 
-Eleventy v3 with Nunjucks. `eleventy.config.js` adds a markdown-it plugin that
-renders `$…$` and `$$…$$` through Temml (MathML, no client-side JS), an HTML
-minifier transform, and the collections/filters the templates use.
+Eleventy v3 with Nunjucks. The site is deliberately tiny: a home page and an
+about page per language, and nothing else. There is no blog, no projects
+section, no tools index, no CV page, and no feed — see `docs/decisions.md`.
+Adding a section means adding it back on purpose, not restoring something that
+was only hidden.
 
-Content lives in `apps/site/src/content/{en,ru}/{posts,projects}/`, one Markdown file
-per item. Routes mirror: `/posts/slug/` and `/ru/posts/slug/`. Translations share a
-`slug` and are linked with `translationUrl` in front matter, which drives the
-`hreflang` tags. `draft: true` excludes a file unless `BUILD_DRAFTS=1`.
+Routes, in full: `/`, `/about/`, `/ru/`, `/ru/about/`, plus `/404.html`,
+`/sitemap.xml`, `/robots.txt`, and the passthrough files in `src/public/`
+(`CNAME`, `_headers`, `favicon.svg`). Translations are linked with
+`translationUrl` in front matter, which drives the `hreflang` tags.
 
-`scripts/lint-content.mjs` requires front matter with `lang: en|ru`, a `title`, and a
-`description` of at most 160 characters.
+`eleventy.config.js` is down to a passthrough copy, the `draft` preprocessor,
+the `isoDate`/`absoluteUrl` filters, and the HTML minifier. There is no Markdown
+content, so there is no markdown-it or Temml math plugin.
 
-`tests/site.test.mjs` asserts EN/RU route parity, that the homepage carries no
-`<script>` or external stylesheet, that translations exist, and that drafts stay out.
+`scripts/lint-content.mjs` still enforces `lang: en|ru`, a `title`, and a
+`description` of at most 160 characters on Markdown under
+`apps/site/src/content/` — a directory that currently does not exist, in which
+case the linter exits quietly.
 
-Editing entry points: `apps/site/src/_data/site.js` (contact links),
-`_data/tools.js` (tool URLs and status), `src/logo.svg` (auto-optimized inline logo),
-`docs/main.pdf` (published as `/cv.pdf`).
+`tests/site.test.mjs` asserts the four routes build, that the removed routes
+stay removed, that the homepage carries no `<script>` or external stylesheet,
+that both about pages keep their outside links and the CV, and that printor is
+nested and base-aware.
+
+Editing entry points: `apps/site/src/_data/site.js` (name in both languages,
+contact links), `_data/navigation.js` (header links; `wordmark: true` keeps
+printor lowercase against the header's uppercase styling), `_data/tools.js`
+(tool URLs and status, which drive the home page and footer), `src/logo.svg`
+(auto-optimized inline logo), `docs/main.pdf` (published as `/cv.pdf` and linked
+from about).
 
 ## Conventions
 

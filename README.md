@@ -1,7 +1,6 @@
 # sazonov.space
 
-A monorepo for Stepan Sazonov's bilingual portfolio and local-first creative
-tools.
+A monorepo for Stepan Sazonov's bilingual site and local-first creative tools.
 
 - `apps/site/` — Eleventy portfolio deployed to `sazonov.space`.
 - `apps/printor/` — React/WebGL2 application deployed to
@@ -37,9 +36,9 @@ The owner's SVG logo lives at `apps/site/src/logo.svg`; the approved CV is
 
 ## Content
 
-English and Russian content lives under `apps/site/src/content/`. A post is one
-Markdown file with front matter; set `draft: true` to exclude it from a normal
-build. `pnpm build:drafts` includes draft material.
+The site is a home page and an about page in English and Russian — four pages
+total. Both about pages are hand-written templates, not Markdown; edit
+`apps/site/src/about.njk` and `apps/site/src/ru/about.njk` directly.
 
 Code is licensed under AGPL-3.0-only. Site prose remains the copyright of
 Stepan Sazonov.

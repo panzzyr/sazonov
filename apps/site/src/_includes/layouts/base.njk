@@ -1,9 +1,10 @@
+{% set siteName = site.nameRu if lang == 'ru' else site.name %}
 <!doctype html>
 <html lang="{{ lang or 'en' }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>{% if title and title != site.name %}{{ title }} — {% endif %}{{ site.name }}</title>
+    <title>{% if title and title != siteName %}{{ title }} — {% endif %}{{ siteName }}</title>
     <meta name="description" content="{{ description or site.description }}">
     <meta name="theme-color" content="#f2f1ee" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0f1012" media="(prefers-color-scheme: dark)">
@@ -15,9 +16,8 @@
       <link rel="alternate" hreflang="{{ 'ru' if lang == 'en' else 'en' }}" href="{{ translationUrl | absoluteUrl(site.url) }}">
     {% endif %}
     <link rel="alternate" hreflang="x-default" href="{{ (englishUrl or page.url) | absoluteUrl(site.url) }}">
-    <link rel="alternate" type="application/rss+xml" title="{{ site.name }}" href="{{ '/ru/feed.xml' if lang == 'ru' else '/feed.xml' }}">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <meta property="og:title" content="{{ title or site.name }}">
+    <meta property="og:title" content="{{ title or siteName }}">
     <meta property="og:description" content="{{ description or site.description }}">
     <meta property="og:type" content="{{ 'article' if section == 'posts' else 'website' }}">
     <meta property="og:url" content="{{ page.url | absoluteUrl(site.url) }}">
@@ -27,13 +27,16 @@
   <body>
     <a class="skip-link" href="#content">{{ "К содержанию" if lang == "ru" else "Skip to content" }}</a>
     <header class="site-header">
-      <a class="mark{% if branding.logo %} has-logo{% endif %}" href="{{ '/ru/' if lang == 'ru' else '/' }}" aria-label="{{ site.name }} — {{ 'главная' if lang == 'ru' else 'home' }}">
+      <a class="mark{% if branding.logo %} has-logo{% endif %}" href="{{ '/ru/' if lang == 'ru' else '/' }}" aria-label="{{ siteName }} — {{ 'главная' if lang == 'ru' else 'home' }}">
         {% if branding.logo %}{{ branding.logo | safe }}{% else %}S{% endif %}
       </a>
       <nav class="nav" aria-label="{{ 'Основная навигация' if lang == 'ru' else 'Primary navigation' }}">
         <ul>
           {% for item in navigation[lang or 'en'] %}
-            <li><a{% if section == item.key %} class="stamp" aria-current="page"{% endif %} href="{{ item.url }}">{{ item.label }}</a></li>
+            {% set classes = [] %}
+            {% if section == item.key %}{% set classes = classes.concat(["stamp"]) %}{% endif %}
+            {% if item.wordmark %}{% set classes = classes.concat(["wordmark"]) %}{% endif %}
+            <li><a{% if classes.length %} class="{{ classes | join(" ") }}"{% endif %}{% if section == item.key %} aria-current="page"{% endif %} href="{{ item.url }}">{{ item.label }}</a></li>
           {% endfor %}
         </ul>
       </nav>
@@ -51,11 +54,11 @@
     <footer class="site-footer">
       <div class="footer-tools" aria-label="{{ 'Инструменты' if lang == 'ru' else 'Tools' }}">
         {% for tool in tools %}
-          {% if tool.url %}<a href="{{ tool.url }}">{{ tool.name }}</a>{% else %}<span>{{ tool.name }} <small class="stamp">{{ tool.status }}</small></span>{% endif %}
+          <a href="{{ tool.url }}">{{ tool.name }}</a>
         {% endfor %}
       </div>
       <div class="fine-print">
-        <span>© {{ site.year }} {{ site.name }}</span>
+        <span>© {{ site.year }} {{ siteName }}</span>
         <span>{{ "Текст: CC BY-NC 4.0" if lang == "ru" else "Text: CC BY-NC 4.0" }}</span>
         {% if site.sourceUrl %}<a href="{{ site.sourceUrl }}">{{ "Исходный код" if lang == "ru" else "Source" }}</a>{% endif %}
         {% if site.email %}<a href="mailto:{{ site.email }}">{{ "Почта" if lang == "ru" else "Email" }}</a>{% endif %}

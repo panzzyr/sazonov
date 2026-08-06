@@ -14,13 +14,13 @@ pnpm check
 
 ## Editing the portfolio
 
-Page templates and styles live in `apps/site/src/`. Project and post Markdown
-lives in `apps/site/src/content/{en,ru}/`. Keep paired translations on the same
-`slug` and link them with `translationUrl`.
+Page templates and styles live in `apps/site/src/`. The site is four pages: `/`,
+`/about/`, `/ru/`, and `/ru/about/`. Keep paired translations linked with
+`translationUrl` so the `hreflang` tags stay correct.
 
-To add a post, copy an existing Markdown file, change its front matter and
-body, and set `draft: true` until it is ready. Use `pnpm build:drafts` to
-preview draft posts.
+Prose is edited in the `.njk` templates themselves — there is no Markdown
+content directory. Adding a blog or a projects section means adding the
+templates, the collection, and the routes back deliberately.
 
 Replace:
 

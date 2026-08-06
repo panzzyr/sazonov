@@ -1,7 +1,7 @@
 ---
 layout: layouts/base.njk
 title: Степан Сазонов
-description: Физик-вычислитель и R&D-инженер. Нелинейная динамика, софт для симуляций и бесплатные инструменты для тех, кто делает изображения.
+description: Бесплатные браузерные инструменты, которые работают на вашем устройстве. Ничего не загружается на сервер.
 lang: ru
 section: home
 permalink: /ru/
@@ -11,32 +11,7 @@ englishUrl: /
 <section class="home-intro">
   <div class="hero-mark{% if branding.logo %} has-logo{% endif %}" aria-hidden="true">{% if branding.logo %}{{ branding.logo | safe }}{% else %}S{% endif %}</div>
   <h1>Степан Сазонов</h1>
-  <p class="lede">Физик-вычислитель и R&amp;D-инженер. Нелинейная динамика, софт для симуляций и бесплатные инструменты для тех, кто делает изображения.</p>
-</section>
-
-<section class="index-section" aria-labelledby="posts-title">
-  <h2 class="section-label" id="posts-title">Статьи</h2>
-  {% set recentPosts = collections.posts | whereLang("ru") | limit(3) %}
-  {% if recentPosts.length %}
-    <ul class="index-list">
-      {% for post in recentPosts %}
-        <li><a href="{{ post.url }}">{{ post.data.title }}</a><time datetime="{{ post.date | isoDate }}">{{ post.date | isoDate }}</time></li>
-      {% endfor %}
-    </ul>
-    <a class="all-link" href="/ru/posts/">Все статьи →</a>
-  {% else %}
-    <p class="empty">Заметки о физике, софте и продюсировании в работе.</p>
-  {% endif %}
-</section>
-
-<section class="index-section" aria-labelledby="projects-title">
-  <h2 class="section-label" id="projects-title">Проекты</h2>
-  <ul class="index-list">
-    {% for project in collections.projects | whereLang("ru") | limit(3) %}
-      <li><a href="{{ project.url }}">{{ project.data.title }}</a><time>{{ project.data.year }}</time></li>
-    {% endfor %}
-  </ul>
-  <a class="all-link" href="/ru/projects/">Все проекты →</a>
+  <p class="lede">Делаю небольшие браузерные инструменты и раздаю их бесплатно.</p>
 </section>
 
 <section class="index-section" aria-labelledby="tools-title">
@@ -44,9 +19,9 @@ englishUrl: /
   <ul class="index-list">
     {% for tool in tools %}
       <li>
-        {% if tool.url %}<a href="{{ tool.url }}">{{ tool.name }}</a>{% else %}<strong>{{ tool.name }}</strong>{% endif %}
-        <span class="{{ 'stamp' if tool.status == 'in development' else 'status' }}">{{ tool.status }}</span>
-        {% if tool.description.ru %}<p class="description">{{ tool.description.ru }}</p>{% endif %}
+        <a href="{{ tool.url }}">{{ tool.name }}</a>
+        <span class="status">{{ tool.status }}</span>
+        <p class="description">{{ tool.description.ru }}</p>
       </li>
     {% endfor %}
   </ul>

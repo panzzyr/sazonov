@@ -15,7 +15,7 @@ export function ToolShell({ children, support = false }: ToolShellProps) {
         <a className="tool-name" href="/">printor</a>
         <nav aria-label="Tool navigation">
           <a aria-current={support ? "page" : undefined} href="/support/">support</a>
-          <a href="https://sazonov.space/tools/">all tools ↗</a>
+          <a href="https://sazonov.space/">all tools ↗</a>
         </nav>
       </header>
       {children}
