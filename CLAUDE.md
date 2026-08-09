@@ -10,11 +10,12 @@ Node 22 and pnpm 10.24.0 (`packageManager` is pinned; CI uses `--frozen-lockfile
 pnpm install
 pnpm dev:site        # Eleventy at http://localhost:8080
 pnpm dev:printor     # Vite at http://127.0.0.1:5173
+pnpm dev:glyph-art   # Vite at http://127.0.0.1:5174
 pnpm check           # lint && build && test — the gate CI runs
 ```
 
 `pnpm check` expands to `pnpm lint` (content lint + `tsc --noEmit`), `pnpm build`
-(both apps plus the size/CSP budgets), then `pnpm test`.
+(all three apps plus the size/CSP budgets), then `pnpm test`.
 
 **Test order matters.** `node --test tests/*.test.mjs` asserts against generated
 HTML in `apps/site/_site/`, so `pnpm test` only passes after a build. Run
@@ -24,7 +25,8 @@ Per-app and single-test invocations:
 
 ```sh
 pnpm --filter @sazonov/printor test              # vitest run
-pnpm --filter @sazonov/printor exec vitest run tests/shader.test.ts
+pnpm --filter @sazonov/glyph-art test
+pnpm --filter @sazonov/glyph-art exec vitest run tests/ramp.test.ts
 pnpm --filter @sazonov/printor exec vitest run -t "deterministic"
 pnpm --filter @sazonov/printor lint              # generates textures, then tsc --noEmit
 node --test tests/site.test.mjs                  # single site test file (needs a site build)
@@ -37,15 +39,19 @@ SITE_URL=https://preview.example.com pnpm build  # override production origin
 These fail the build, not just a lint warning:
 
 - `scripts/budget.mjs` — Brotli-compressed `apps/site/_site/index.html` must stay
-  under 14,336 bytes. The homepage inlines all CSS and ships no `<script>`.
-- `apps/printor/scripts/budget.mjs` — printor's `dist/assets/*.{js,css}` must stay
-  under 300 KB gzip, and `dist/index.html` must still contain `connect-src 'none'`.
-- `tests/privacy.test.ts` (printor) — `public/_headers` must keep `connect-src 'none'`
-  and `App.tsx`/`main.tsx`/`store.ts`/`projectState.ts` must contain no
-  `fetch`/`XMLHttpRequest`/`WebSocket`.
+  under 14,336 bytes. The homepage inlines all CSS and may load exactly one
+  script, `/theme.js`; any other script or external stylesheet fails the build.
+- `apps/printor/scripts/budget.mjs` and `apps/glyph-art/scripts/budget.mjs` — each
+  tool's `dist/assets/*.{js,css}` must stay under 300 KB gzip, and its
+  `dist/index.html` must still contain `connect-src 'none'`.
+- `tests/privacy.test.ts` in **both** tools — `public/_headers` and `index.html`
+  must keep `connect-src 'none'`, and no file under `src/` may contain
+  `fetch`/`XMLHttpRequest`/`WebSocket`/`sendBeacon`/`EventSource` or
+  `Math.random`. Comments are stripped before matching, so discussing these APIs
+  in prose is fine.
 
-Both apps are static and client-only: no endpoints, no telemetry, no remote assets,
-no uploads. Adding any of those breaks the CSP tests.
+All three apps are static and client-only: no endpoints, no telemetry, no remote
+assets, no uploads. Adding any of those breaks the CSP tests.
 
 ## Repository layout
 
@@ -53,20 +59,38 @@ pnpm workspace (`apps/*`, `packages/*`):
 
 - `apps/site/` — Eleventy v3 bilingual portfolio → `sazonov.space`.
 - `apps/printor/` — Vite + React 19 + TypeScript + WebGL2 tool → `sazonov.space/printor/`.
+- `apps/glyph-art/` — Vite + React 19 + TypeScript + canvas2d tool → `sazonov.space/glyph-art/`.
 - `packages/tokens/tokens.css` — design tokens, read **by path** by `scripts/build-css.mjs`.
+  It defines the dark palette only under `prefers-color-scheme`; the explicit
+  `[data-theme]` overrides live in `apps/site/src/site.css`.
 - `packages/shell/` — legacy shared tool shell. Nothing imports `@sazonov/shell` or
-  `@sazonov/tokens` by package name anymore; printor vendors its own copies in
-  `apps/printor/src/shared/`. Editing `packages/shell/` does not affect printor.
+  `@sazonov/tokens` by package name anymore; each tool vendors its own copies in
+  `apps/<tool>/src/shared/`. Editing `packages/shell/` affects nothing.
+
 - `scripts/` — root build steps (CSS bundling, content lint, postbuild, budgets).
 - `docs/decisions.md` — ADRs. New dependencies or spec deviations get an entry.
 - `00-CONTEXT.md`, `01-SPEC-site.md`, `02-SPEC-printor.md`, `03-CONTENT.md` — product
   source of truth; read `00-CONTEXT.md` first.
+
+**`src/shared/` is duplicated, not shared.** `tokens.css`, `shell.css`,
+`Shell.tsx` and `theme.ts` are byte-identical copies in both tools. A change to
+one has to be copied to the other by hand — there is no build step that does it.
+
 **One repository, one Pages deployment.** `pnpm build` builds the site, builds
-printor, then `scripts/nest-printor.mjs` copies `apps/printor/dist/` into
-`apps/site/_site/printor/`. printor is built with Vite `base: "/printor/"`;
-`PRINTOR_BASE=/` overrides it for a root domain. Anything referencing an asset
-at runtime must go through `import.meta.env.BASE_URL` — a root-absolute path
-breaks the sub-path deployment.
+each tool, then `scripts/nest-tools.mjs` copies every `apps/<tool>/dist/` into
+`apps/site/_site/<tool>/`. Each tool is built with its own Vite base
+(`/printor/`, `/glyph-art/`); `PRINTOR_BASE=/` and `GLYPH_ART_BASE=/` override
+them for a root domain. Anything referencing an asset at runtime must go through
+`import.meta.env.BASE_URL` — a root-absolute path breaks the sub-path
+deployment. Adding a tool means adding a row to `nest-tools.mjs`, an entry to
+`apps/site/src/_data/tools.js`, and a build step to the root `build` script.
+
+**Theme.** Three states — light, dark, system — shared across four documents on
+one origin. The contract is one localStorage key, `sazonov-theme`, and one
+attribute, `data-theme` on `<html>`; "system" stores nothing and stamps nothing.
+The site applies it from `src/public/theme.js`, a blocking classic script; each
+tool applies it in `main.tsx` before the first render. Changing the key or the
+attribute means changing all of them.
 
 ## Generated files — never edit by hand
 
@@ -77,6 +101,7 @@ breaks the sub-path deployment.
 | `apps/printor/public/textures/` | `scripts/build-texture-library.mjs` | `assets/` (full-resolution scans, not in git) |
 | `apps/site/_site/` | `eleventy` + `scripts/postbuild.mjs` | site sources |
 | `apps/printor/dist/` | `vite build` + `apps/printor/scripts/postbuild.mjs` | printor sources |
+| `apps/glyph-art/dist/` | `vite build` + `apps/glyph-art/scripts/postbuild.mjs` | glyph art sources |
 
 The manifest-to-TypeScript generator runs before every printor `dev`, `lint`, and
 `build`. To add a texture: drop the original in `assets/<group>/`, then run
@@ -145,39 +170,91 @@ selects flat, white-on-alpha, or black-on-alpha.
 bundle; `scripts/postbuild.mjs` copies `index.html` to `dist/support/index.html`.
 A service worker registers in production builds only.
 
+## glyph art architecture
+
+A raster is resampled onto a square grid, the grid is quantized into tone bands,
+and each cell prints a mark. **Tone is carried by the size of the mark, never by
+its colour.** Everything in the schema serves that one idea.
+
+**A band stores a coverage target, not a size.** This is the decision the whole
+tool rests on, and getting it wrong is invisible until the output looks bad.
+Coverage grows as the square of size, so a linear tone→size map hands a
+half-tone cell a quarter of its ink. Instead:
+
+```
+coverage c = 1.05 · tone ^ weight        authored curve, not photometric
+density  ρ = measured ink fraction of the mark's tight box
+size     s = sqrt( c / (ρ · min(a, 1/a)) )   long side, in cell units
+```
+
+Every mark — shipped SVG, typed character, uploaded file — is rasterized to
+256 px and measured for ρ and aspect by the same code, because the solver cannot
+run without ρ. See `docs/decisions.md`.
+
+Data flow:
+
+- `src/types.ts` — `Settings`, `Band`, `GlyphSpec`, `defaultSettings`. One schema.
+- `src/engine/marks.ts` — the shipped `press` set as inline SVG. Densities are
+  never hard-coded; they are measured like everything else.
+- `src/engine/glyphLibrary.ts` — rasterize, measure ink (`alpha × (1 − luma)`),
+  tight-box, cache. Loads through `<img>` and `FileReader`, never fetch.
+- `src/engine/tone.ts` — box-average **in linear light**, band in **L\***,
+  auto-levels from the 1st/99th percentile of the cell tones. Pure except for
+  `sampleSource`.
+- `src/engine/ramp.ts` — the coverage/size solve. Pure, unit-tested, no canvas.
+- `src/engine/cellParams.ts` — `hand` jitter and cycle phase, hashed on the
+  **cell, never the frame**; hashing on the frame makes the surface boil.
+- `src/engine/render.ts` — one pass stamping marks into an alpha mask, then one
+  `source-in` to colour it. The union in alpha is what makes overlapping ink
+  idempotent and draw order irrelevant.
+- `src/export/` — same three files as printor, same shapes.
+- `src/projectState.ts` — validates untrusted project JSON; share links strip
+  uploaded marks and substitute the shipped mark of the same band.
+
+**Adding a parameter touches four files in lockstep**: `types.ts` (field +
+default), `projectState.ts` (clamp), the engine module that consumes it, and the
+control in `App.tsx` or `components/RampEditor.tsx`.
+
+**The preview is the export.** The raster is `grid × cellPixels(grid)`, derived
+from the grid rather than the source, so there is no proxy and none of printor's
+`u_pixel` class of preview/export mismatch. `cellPixels` returns an even number
+so H.264 never has to resize the frame.
+
+Same determinism rule as printor: no `Math.random()`, reroll advances the seed
+with an LCG, `tests/privacy.test.ts` greps for both.
+
 ## Site architecture
 
-Eleventy v3 with Nunjucks. The site is deliberately tiny: a home page and an
-about page per language, and nothing else. There is no blog, no projects
-section, no tools index, no CV page, and no feed — see `docs/decisions.md`.
-Adding a section means adding it back on purpose, not restoring something that
-was only hidden.
+Eleventy v3 with Nunjucks. Deliberately small, but no longer two pages: the
+header carries Tools, Articles and About, and the home page lists the tools and
+the newest articles.
 
-Routes, in full: `/`, `/about/`, `/ru/`, `/ru/about/`, plus `/404.html`,
+Routes, in full: `/`, `/about/`, `/tools/`, `/articles/`, `/articles/printor/`,
+`/articles/glyph-art/` and the same six under `/ru/`, plus `/404.html`,
 `/sitemap.xml`, `/robots.txt`, and the passthrough files in `src/public/`
-(`CNAME`, `_headers`, `favicon.svg`). Translations are linked with
+(`CNAME`, `_headers`, `favicon.svg`, `theme.js`). Translations are linked with
 `translationUrl` in front matter, which drives the `hreflang` tags.
 
-`eleventy.config.js` is down to a passthrough copy, the `draft` preprocessor,
-the `isoDate`/`absoluteUrl` filters, and the HTML minifier. There is no Markdown
-content, so there is no markdown-it or Temml math plugin.
+Articles are Markdown under `apps/site/src/content/{en,ru}/articles/`, with a
+directory data file setting the layout, language, tag (`articlesEn` /
+`articlesRu`) and permalink. `scripts/lint-content.mjs` enforces `lang: en|ru`,
+a `title`, and a `description` of at most 160 characters on all of it.
 
-`scripts/lint-content.mjs` still enforces `lang: en|ru`, a `title`, and a
-`description` of at most 160 characters on Markdown under
-`apps/site/src/content/` — a directory that currently does not exist, in which
-case the linter exits quietly.
+The site ships exactly one script, `src/public/theme.js`, loaded blocking from
+`<head>` so the theme lands before first paint. Its CSP is `script-src 'self'`;
+everything else stays locked down, including `connect-src 'none'`.
 
-`tests/site.test.mjs` asserts the four routes build, that the removed routes
-stay removed, that the homepage carries no `<script>` or external stylesheet,
-that both about pages keep their outside links and the CV, and that printor is
-nested and base-aware.
+`tests/site.test.mjs` asserts every route builds, that the removed routes
+(`/posts/`, `/projects/`, `/cv/`) stay removed, that the homepage loads
+`/theme.js` and nothing else, that both about pages keep their outside links and
+the CV, that the theme toggle and its CSS overrides are present, and that both
+tools are nested and base-aware.
 
 Editing entry points: `apps/site/src/_data/site.js` (name in both languages,
-contact links), `_data/navigation.js` (header links; `wordmark: true` keeps
-printor lowercase against the header's uppercase styling), `_data/tools.js`
-(tool URLs and status, which drive the home page and footer), `src/logo.svg`
-(auto-optimized inline logo), `docs/main.pdf` (published as `/cv.pdf` and linked
-from about).
+contact links), `_data/navigation.js` (header links), `_data/tools.js` (tool
+URLs, status and article links, which drive the home page, the tools index and
+the footer), `src/logo.svg` (auto-optimized inline logo), `docs/main.pdf`
+(published as `/cv.pdf` and linked from about).
 
 ## Conventions
 
@@ -185,6 +262,7 @@ from about).
   English; Russian prose only under `src/content/ru/`.
 - `camelCase` values, `PascalCase` components and types, kebab-case content slugs.
 - Two-space indentation.
-- Always spell `printor` lowercase.
+- Always spell `printor` lowercase. Same for `glyph art` — two words with a real
+  space in prose and in the UI; the hyphen belongs to the URL and the slug only.
 - Reuse tokens rather than hardcoding palette or spacing values.
 - Conventional Commits, e.g. `feat(printor): add paper banding controls`.

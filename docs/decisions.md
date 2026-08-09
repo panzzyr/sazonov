@@ -1,5 +1,73 @@
 # Architecture decisions
 
+## 2026-08-09 — glyph art solves mark size from ink coverage
+
+- **Decision:** A tone band stores a target *ink coverage*, not a size. Every
+  mark is rasterized and measured on load for its ink density ρ over its tight
+  bounding box, and the printed size is solved as `sqrt(c / (ρ · min(a, 1/a)))`.
+  The coverage curve itself is authored, `c = 1.05 · t^weight`, not photometric.
+- **Alternatives:** Map tone linearly to size, the obvious reading of the brief.
+  Or derive coverage photometrically from `1 − luminance`.
+- **Reason:** Coverage grows as the square of size, so a linear map gives a
+  half-tone cell a quarter of its ink: midtones wash out, shadows slam shut, and
+  a thin comma reads the same tone as a solid square. Photometric coverage is
+  correct for a 300 lpi screen and disastrous at 24 px cells, where the eye
+  reads mark size directly rather than integrating the cell — it reaches nearly
+  half coverage by the second band of seven and clogs the picture solid.
+- **Consequences:** Marks cannot be drawn without being measured first, so the
+  library rasterizes everything — shipped, typed and uploaded — through one
+  path. A cycling band also has to correct each member by `sqrt(ρ_ref/ρ)`, or
+  the tone pulses as it cycles. The ramp arithmetic is pure and unit-tested
+  without a canvas.
+
+## 2026-08-09 — glyph art renders on canvas2d, not WebGL2
+
+- **Decision:** Draw the grid with `drawImage` onto a 2D canvas, accumulating
+  the marks in an alpha mask and colouring the mask in one `source-in` pass.
+- **Alternatives:** Reuse printor's WebGL2 approach with a glyph atlas and
+  instanced quads.
+- **Reason:** The primitive here is "draw a sprite at a position and a size",
+  which is exactly what canvas2d is. The default grid is about 3,900 draws per
+  frame. An atlas would force uploaded SVG to be rasterized at one fixed size
+  and would roughly double the engine code for no visible gain. Accumulating in
+  alpha also makes ink *union* rather than stack, so overlapping shadows never
+  bruise and draw order is irrelevant — and it makes the source-colour mode one
+  extra `drawImage` instead of forty thousand tinted ones.
+- **Consequences:** The output raster is derived from the grid rather than the
+  source, so the preview canvas is the export frame and printor's whole
+  `u_pixel` class of preview/export mismatches cannot occur. `cellPixels` is
+  kept even so H.264 never has to resize the frame.
+
+## 2026-08-09 — glyph art has no fit setting
+
+- **Decision:** The output's aspect follows the source's. The grid height is
+  derived from the grid width, and the source is centre-cropped by the sub-cell
+  remainder.
+- **Alternatives:** A `cover`/`contain` toggle, as the art direction proposed.
+- **Reason:** Both options answer a question the tool never asks, because there
+  is no target frame to fit into — the frame *is* the source's shape. "Follow
+  the source" is the answer, and it is one fewer control in a tool whose owner
+  asked for fewer.
+- **Consequences:** Square or letterboxed output is the user's job upstream.
+
+## 2026-08-09 — Articles and tools become sections again
+
+- **Decision:** Add `/tools/` and `/articles/` per language, with the header
+  reduced to Tools, Articles, About, and the newest articles on the home page.
+  The site ships one script, `/theme.js`, and its CSP moves to `script-src
+  'self'`.
+- **Alternatives:** Keep the two-page site and put each guide inside its own
+  tool; keep the zero-JavaScript rule and drop the theme toggle.
+- **Reason:** Two tools with real instructions is enough content for the
+  sections to carry their weight — the 2026-08-06 decision below was made when
+  there was one tool and nothing written about it. A theme toggle that persists
+  across navigation cannot be done in CSS alone, and a blocking same-origin
+  script is the only version with no flash of the wrong palette.
+- **Consequences:** The homepage budget check now permits exactly one script,
+  `/theme.js`, and still fails on any other. The theme contract — the
+  `sazonov-theme` key and the `data-theme` attribute — is shared verbatim by
+  both tools, which are separate documents on the same origin.
+
 ## 2026-08-06 — The site is a home page, an about page, and printor
 
 - **Decision:** Strip the portfolio to two routes per language. Posts, projects,
