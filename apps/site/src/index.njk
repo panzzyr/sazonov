@@ -26,3 +26,15 @@ englishUrl: /
     {% endfor %}
   </ul>
 </section>
+
+<section class="index-section" aria-labelledby="articles-title">
+  <h2 class="section-label" id="articles-title">Articles</h2>
+  <ul class="index-list">
+    {% for article in collections.articlesEn | reverse %}{% if loop.index <= 3 %}
+      <li>
+        <a href="{{ article.url }}">{{ article.data.title }}</a>
+        <span class="status">{{ article.date | isoDate }}</span>
+      </li>
+    {% endif %}{% endfor %}
+  </ul>
+</section>

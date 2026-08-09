@@ -14,7 +14,7 @@ export function Support() {
   };
 
   return (
-    <ToolShell support>
+    <ToolShell name="printor" support>
       <main className="support-page">
         <header>
           <p className="kicker">Support</p>

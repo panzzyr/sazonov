@@ -1,0 +1,29 @@
+---
+layout: layouts/base.njk
+title: Tools
+description: Browser tools that run on your device. Nothing is uploaded.
+lang: en
+section: tools
+permalink: /tools/
+translationUrl: /ru/tools/
+englishUrl: /tools/
+---
+<article class="prose">
+  <header class="page-heading">
+    <p class="eyebrow">Tools</p>
+    <h1>Tools</h1>
+  </header>
+</article>
+
+<section class="index-section" aria-label="Tools">
+  <ul class="index-list">
+    {% for tool in tools %}
+      <li>
+        <a href="{{ tool.url }}">{{ tool.name }}</a>
+        <span class="status">{{ tool.status }}</span>
+        <p class="description">{{ tool.description.en }}</p>
+        <p class="description"><a href="{{ tool.article.en }}">How to use it →</a></p>
+      </li>
+    {% endfor %}
+  </ul>
+</section>

@@ -1,3 +1,28 @@
+/*
+ * Explicit theme choice. `packages/tokens/tokens.css` is shared and declares
+ * the dark palette only under prefers-color-scheme, so the two overrides below
+ * repeat both palettes at `[data-theme]` specificity — that is what lets an
+ * explicit choice beat the media query in either direction. theme.js stamps
+ * the attribute; no attribute means the media query still decides.
+ */
+:root[data-theme="light"] {
+  --paper: #f2f1ee;
+  --ink: #17181a;
+  --ink-2: #74777b;
+  --rule: #d2d1cc;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --paper: #0f1012;
+  --ink: #e8e7e3;
+  --ink-2: #8a8d91;
+  --rule: #2a2c2f;
+
+  color-scheme: dark;
+}
+
 *,
 *::before,
 *::after {
@@ -107,15 +132,30 @@ a:hover {
   text-decoration: none;
 }
 
-/* The header uppercases everything; printor keeps its lowercase spelling. */
-.nav .wordmark {
-  text-transform: none;
-}
-
+.header-end,
 .languages {
   display: flex;
   gap: .35rem;
   align-items: center;
+}
+
+.header-end {
+  gap: .8rem;
+}
+
+.theme-toggle {
+  padding: 0 .4em;
+  border: 1px solid var(--rule);
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  border-color: var(--ink);
 }
 
 main {
@@ -274,6 +314,11 @@ h1 {
   margin: 0 0 1.2rem;
 }
 
+/* Parameter names keep their exact UI spelling, in both languages. */
+.prose-body code {
+  font: var(--step--1)/1.4 var(--font-mono);
+}
+
 .site-footer {
   padding: 1.8rem 0 2rem;
   border-top: 1px solid var(--rule);
@@ -308,7 +353,7 @@ h1 {
     grid-row: 2;
   }
 
-  .languages {
+  .header-end {
     justify-self: end;
   }
 
@@ -327,11 +372,17 @@ h1 {
 }
 
 @media print {
-  :root {
+  /* Repeated at `[data-theme]` specificity so an explicit dark choice does not
+     survive onto paper. */
+  :root,
+  :root[data-theme="light"],
+  :root[data-theme="dark"] {
     --paper: #fff;
     --ink: #000;
     --ink-2: #333;
     --rule: #aaa;
+
+    color-scheme: light;
   }
 
   @page {
@@ -345,7 +396,8 @@ h1 {
 
   .site-header,
   .site-footer,
-  .skip-link {
+  .skip-link,
+  .theme-toggle {
     display: none;
   }
 

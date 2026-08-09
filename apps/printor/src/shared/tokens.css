@@ -13,11 +13,43 @@
   --step-3: 2rem;
 }
 
+/*
+ * Three theme states. "system" stamps no attribute, so only the media query
+ * separates light from dark; an explicit choice stamps `data-theme` and has to
+ * win in both directions, which is why the dark media query is guarded and the
+ * light selector is repeated.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #0f1012;
     --ink: #e8e7e3;
     --ink-2: #8a8d91;
     --rule: #2a2c2f;
   }
+}
+
+:root[data-theme="dark"] {
+  --paper: #0f1012;
+  --ink: #e8e7e3;
+  --ink-2: #8a8d91;
+  --rule: #2a2c2f;
+}
+
+:root[data-theme="light"] {
+  --paper: #f2f1ee;
+  --ink: #17181a;
+  --ink-2: #74777b;
+  --rule: #d2d1cc;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }

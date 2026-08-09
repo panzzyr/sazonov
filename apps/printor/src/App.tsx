@@ -458,7 +458,7 @@ export function App() {
   const truncated = totalFrames > MAX_EXPORT_FRAMES;
 
   return (
-    <ToolShell>
+    <ToolShell name="printor">
       <main className="printor-app">
         <div className="workspace">
           <PipelinePanel />

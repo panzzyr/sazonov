@@ -1,4 +1,5 @@
 {% set siteName = site.nameRu if lang == 'ru' else site.name %}
+{% set themeLabels = '{"system":"авто","light":"светлая","dark":"тёмная"}' if lang == 'ru' else '{"system":"auto","light":"light","dark":"dark"}' %}
 <!doctype html>
 <html lang="{{ lang or 'en' }}">
   <head>
@@ -9,7 +10,7 @@
     <meta name="theme-color" content="#f2f1ee" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0f1012" media="(prefers-color-scheme: dark)">
     <meta name="referrer" content="no-referrer">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self' data:; media-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self' data:; media-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
     <link rel="canonical" href="{{ page.url | absoluteUrl(site.url) }}">
     <link rel="alternate" hreflang="{{ lang or 'en' }}" href="{{ page.url | absoluteUrl(site.url) }}">
     {% if translationUrl %}
@@ -19,10 +20,13 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <meta property="og:title" content="{{ title or siteName }}">
     <meta property="og:description" content="{{ description or site.description }}">
-    <meta property="og:type" content="{{ 'article' if section == 'posts' else 'website' }}">
+    <meta property="og:type" content="{{ 'article' if section == 'articles' else 'website' }}">
     <meta property="og:url" content="{{ page.url | absoluteUrl(site.url) }}">
     <meta property="og:image" content="{{ '/og.png' | absoluteUrl(site.url) }}">
     <style>{% include "generated/styles.css" %}</style>
+    {# Blocking on purpose: the stored theme has to land on <html> before the
+       first paint, otherwise the wrong palette flashes. #}
+    <script src="/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#content">{{ "К содержанию" if lang == "ru" else "Skip to content" }}</a>
@@ -33,18 +37,20 @@
       <nav class="nav" aria-label="{{ 'Основная навигация' if lang == 'ru' else 'Primary navigation' }}">
         <ul>
           {% for item in navigation[lang or 'en'] %}
-            {% set classes = [] %}
-            {% if section == item.key %}{% set classes = classes.concat(["stamp"]) %}{% endif %}
-            {% if item.wordmark %}{% set classes = classes.concat(["wordmark"]) %}{% endif %}
-            <li><a{% if classes.length %} class="{{ classes | join(" ") }}"{% endif %}{% if section == item.key %} aria-current="page"{% endif %} href="{{ item.url }}">{{ item.label }}</a></li>
+            <li><a{% if section == item.key %} class="stamp" aria-current="page"{% endif %} href="{{ item.url }}">{{ item.label }}</a></li>
           {% endfor %}
         </ul>
       </nav>
-      <nav class="languages" aria-label="{{ 'Язык' if lang == 'ru' else 'Language' }}">
-        <a{% if lang == 'en' %} class="stamp" aria-current="page"{% endif %} href="{{ translationUrl if lang == 'ru' else page.url }}">EN</a>
-        <span aria-hidden="true">·</span>
-        <a{% if lang == 'ru' %} class="stamp" aria-current="page"{% endif %} href="{{ translationUrl if lang == 'en' else page.url }}">RU</a>
-      </nav>
+      <div class="header-end">
+        <nav class="languages" aria-label="{{ 'Язык' if lang == 'ru' else 'Language' }}">
+          <a{% if lang == 'en' %} class="stamp" aria-current="page"{% endif %} href="{{ translationUrl if lang == 'ru' else page.url }}">EN</a>
+          <span aria-hidden="true">·</span>
+          <a{% if lang == 'ru' %} class="stamp" aria-current="page"{% endif %} href="{{ translationUrl if lang == 'en' else page.url }}">RU</a>
+        </nav>
+        {# Hidden until theme.js unhides it: without scripting the button
+           could not do anything, so it is not offered. #}
+        <button class="theme-toggle" type="button" hidden data-theme-toggle data-theme-labels='{{ themeLabels }}' data-theme-prefix="{{ 'Тема' if lang == 'ru' else 'Theme' }}" aria-label="{{ 'Тема' if lang == 'ru' else 'Theme' }}">{{ 'авто' if lang == 'ru' else 'auto' }}</button>
+      </div>
     </header>
 
     <main id="content">

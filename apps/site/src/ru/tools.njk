@@ -1,0 +1,29 @@
+---
+layout: layouts/base.njk
+title: Инструменты
+description: Браузерные инструменты, которые работают на вашем устройстве. Ничего не загружается на сервер.
+lang: ru
+section: tools
+permalink: /ru/tools/
+translationUrl: /tools/
+englishUrl: /tools/
+---
+<article class="prose">
+  <header class="page-heading">
+    <p class="eyebrow">Инструменты</p>
+    <h1>Инструменты</h1>
+  </header>
+</article>
+
+<section class="index-section" aria-label="Инструменты">
+  <ul class="index-list">
+    {% for tool in tools %}
+      <li>
+        <a href="{{ tool.url }}">{{ tool.name }}</a>
+        <span class="status">{{ tool.status }}</span>
+        <p class="description">{{ tool.description.ru }}</p>
+        <p class="description"><a href="{{ tool.article.ru }}">Как этим пользоваться →</a></p>
+      </li>
+    {% endfor %}
+  </ul>
+</section>

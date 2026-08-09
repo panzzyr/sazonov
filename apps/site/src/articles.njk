@@ -1,0 +1,28 @@
+---
+layout: layouts/base.njk
+title: Articles
+description: Instructions for the tools, newest first.
+lang: en
+section: articles
+permalink: /articles/
+translationUrl: /ru/articles/
+englishUrl: /articles/
+---
+<article class="prose">
+  <header class="page-heading">
+    <p class="eyebrow">Articles</p>
+    <h1>Instructions</h1>
+  </header>
+</article>
+
+<section class="index-section" aria-label="Articles">
+  <ul class="index-list">
+    {% for article in collections.articlesEn | reverse %}
+      <li>
+        <a href="{{ article.url }}">{{ article.data.title }}</a>
+        <span class="status">{{ article.date | isoDate }}</span>
+        <p class="description">{{ article.data.description }}</p>
+      </li>
+    {% endfor %}
+  </ul>
+</section>

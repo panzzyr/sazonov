@@ -86,3 +86,18 @@
     margin-left: 0;
   }
 }
+
+.theme-button {
+  padding: .2rem .35rem;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.theme-button:hover {
+  border-color: var(--ink);
+}

@@ -1,0 +1,7 @@
+{
+  "layout": "layouts/article.njk",
+  "lang": "ru",
+  "section": "articles",
+  "tags": ["articlesRu"],
+  "permalink": "/ru/articles/{{ page.fileSlug }}/"
+}

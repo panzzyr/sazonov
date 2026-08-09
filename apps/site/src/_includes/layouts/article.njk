@@ -1,0 +1,22 @@
+---
+layout: layouts/base.njk
+section: articles
+---
+<article class="prose">
+  <header class="page-heading">
+    <p class="eyebrow">
+      {{ "Статья" if lang == "ru" else "Article" }}
+      <span aria-hidden="true">·</span>
+      <time datetime="{{ page.date | isoDate }}">{{ page.date | isoDate }}</time>
+    </p>
+    <h1>{{ title }}</h1>
+  </header>
+  <div class="prose-body">
+    {{ content | safe }}
+    {% for item in tools %}
+      {% if item.slug == tool %}
+        <p><a href="{{ item.url }}">{{ "Открыть" if lang == "ru" else "Open" }} {{ item.name }} →</a></p>
+      {% endif %}
+    {% endfor %}
+  </div>
+</article>
