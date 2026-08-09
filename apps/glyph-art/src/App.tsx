@@ -474,10 +474,12 @@ export function App() {
         <aside className="panel panel-left" aria-label="Source and grid">
           <section className="panel-block">
             <h2>source</h2>
+            {/* Not image/*: an SVG source cannot be relied on to decode through
+                createImageBitmap, and marks are the place for vector anyway. */}
             <label className="drop">
               <input
                 type="file"
-                accept="video/*,image/*"
+                accept="video/*,image/png,image/jpeg,image/webp,image/gif,image/avif"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) void openMedia(file);
@@ -573,9 +575,24 @@ export function App() {
               </select>
               <button type="button" onClick={addTextMarks} disabled={!markText.trim()}>add</button>
             </div>
+            <div className="button-row">
+              <label className="button-like">
+                load a set
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  multiple
+                  onChange={(event) => {
+                    if (event.target.files?.length) void addMarkFiles(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
             <p className="control-hint">
-              Each character becomes one mark on band {selectedBand}. Image files go straight
-              onto a band from the ramp below.
+              Each typed character becomes one mark on band {selectedBand}. A whole set of
+              image files spreads across the bands in file order; dropping files on a single
+              band in the ramp below adds them all to that band, where they cycle.
             </p>
           </section>
         </aside>

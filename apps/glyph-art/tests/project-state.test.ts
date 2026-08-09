@@ -6,7 +6,7 @@ import {
   parseSettings,
   shareableSettings,
 } from "../src/projectState";
-import { initialSettings } from "../src/store";
+import { initialSettings, resampleBands, useGlyphArtStore } from "../src/store";
 import { maxBands, maxGrid, minBands, minGrid, type Settings } from "../src/types";
 
 describe("parsing an untrusted project", () => {
@@ -129,5 +129,47 @@ describe("share links", () => {
 
   it("survives a corrupt payload by throwing rather than loading rubbish", () => {
     expect(() => decodeSettings("not-base64!!")).toThrow();
+  });
+});
+
+describe("loading a set of marks", () => {
+  function spread(fileCount: number, bandCount: number) {
+    const settings = initialSettings();
+    settings.bands = resampleBands(settings.bands, bandCount);
+    const specs = Array.from({ length: fileCount }, (_, index) => ({
+      id: `file-${index}`,
+      label: `m${index}`,
+      kind: "file" as const,
+      source: "data:image/png;base64,iVBORw0KGgo=",
+    }));
+    useGlyphArtStore.setState({ settings });
+    useGlyphArtStore.getState().addGlyphs(specs);
+    return useGlyphArtStore.getState().settings;
+  }
+
+  it("covers every marked band even when there are fewer files than bands", () => {
+    const settings = spread(3, 7);
+    expect(settings.bands[0].glyphs).toEqual([]);
+    for (const band of settings.bands.slice(1)) {
+      expect(band.glyphs).toHaveLength(1);
+      expect(band.glyphs[0]).toMatch(/^file-/);
+    }
+  });
+
+  it("keeps the marks in file order, lightest band first", () => {
+    const settings = spread(3, 7);
+    const order = settings.bands.slice(1).map((band) => band.glyphs[0]);
+    expect(order).toEqual(["file-0", "file-0", "file-1", "file-1", "file-2", "file-2"]);
+  });
+
+  it("gives one band each when the counts match", () => {
+    const settings = spread(6, 7);
+    expect(settings.bands.slice(1).map((band) => band.glyphs[0]))
+      .toEqual(["file-0", "file-1", "file-2", "file-3", "file-4", "file-5"]);
+  });
+
+  it("drops hand-set sizes so the new marks are solved from the curve", () => {
+    const settings = spread(3, 7);
+    expect(settings.bands.every((band) => band.size === null)).toBe(true);
   });
 });

@@ -455,7 +455,14 @@ export function App() {
   }, [frame, goToFrame, media, redo, reroll, runExport, undo]);
 
   const mp4Available = useMemo(() => canEncodeMp4(), []);
-  const truncated = totalFrames > MAX_EXPORT_FRAMES;
+  // frameCount() already clamps, so totalFrames can never exceed the cap —
+  // comparing against it would silently never fire. Ask the source instead.
+  const requestedFrames = media
+    ? (media.kind === "image"
+      ? Math.round(settings.stillFrames)
+      : Math.ceil(media.duration * settings.targetFps))
+    : 0;
+  const truncated = requestedFrames > MAX_EXPORT_FRAMES;
 
   return (
     <ToolShell name="printor">

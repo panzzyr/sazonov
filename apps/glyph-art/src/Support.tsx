@@ -32,7 +32,7 @@ export function Support() {
         <section>
           <h2>What it does</h2>
           <p>
-            Import MP4, MOV, WebM, PNG, JPEG, SVG or WebP. The source is converted to
+            Import MP4, MOV, WebM, PNG, JPEG or WebP. The source is converted to
             grayscale, resampled onto a square grid of {minGrid} to {maxGrid} cells
             across, and split into {minBands} to {maxBands} tone bands. Each band prints
             a mark, and the size of that mark is what carries the tone — there is no
@@ -49,8 +49,9 @@ export function Support() {
         <section>
           <h2>Marks</h2>
           <p>
-            Seven marks ship with the tool. You can type characters to add more, or drop
-            PNG, JPEG, SVG or WebP files onto any band. A band holding more than one mark
+            Six marks ship with the tool, and the lightest band starts empty. You can type
+            characters to add more, or drop PNG, JPEG, SVG or WebP files onto any band —
+            those may be vector, even though the source may not. A band holding more than one mark
             cycles through them, one mark every <em>hold</em> frames, with each cell out
             of phase with its neighbours.
           </p>

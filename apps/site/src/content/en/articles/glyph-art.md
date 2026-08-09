@@ -23,7 +23,8 @@ which capabilities you have.
 ## Load a source
 
 Drop a file anywhere on the canvas, or use the drop zone in the source panel.
-It reads MP4, MOV, WebM, PNG, JPEG, SVG and WebP.
+It reads MP4, MOV, WebM, PNG, JPEG and WebP. SVG works for marks but not as a
+source — browsers will not reliably decode one into a bitmap.
 
 Decoding is the browser's job. If an MP4 or MOV will not open, convert it to
 H.264 or export an image sequence from your editor instead.
@@ -108,12 +109,16 @@ square sit on one ramp without any of them reading two bands off.
 
 ## Marks
 
-Seven marks ship with the tool: a point, a cross, a saltire, a frame, a ring and
-a blot, plus the blank paper band.
+Six marks ship with the tool — a point, a cross, a saltire, a frame, a ring and
+a blot — spread across the bands, with the lightest band left as paper.
 
-To add your own, drop PNG, JPEG, SVG or WebP files straight onto a band's
-column, or use the `+` button in it. Dropping several files at once spreads them
-across the bands in file order. Click a mark's chip to take it off that band.
+`load a set` in the marks panel takes several PNG, JPEG, SVG or WebP files at
+once and spreads them across the bands in file order. That is the fast path from
+a folder of drawings to a working ramp.
+
+To place marks one at a time, drop files straight onto a band's column in the
+ramp, or use the `+` button in it. Several files dropped on one column all go to
+that band, where they cycle. Click a mark's chip to take it off the band.
 
 To use letters, type characters into the `marks` field, pick a font, and press
 `add`. Each character becomes one mark, and they go onto whichever band is

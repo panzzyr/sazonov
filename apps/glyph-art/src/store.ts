@@ -150,13 +150,20 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
         if (!settings.glyphs.some((existing) => existing.id === spec.id)) settings.glyphs.push(spec);
       }
       if (bandIndex === undefined) {
-        // A multi-file drop with no target spreads across the bands in file
-        // order, which is the fast path from a folder of marks to a ramp.
+        // A set loaded with no target spreads across the ramp in file order —
+        // the fast path from a folder of drawings to a working ramp.
+        //
+        // Spread *proportionally*, not one file per band from the top: three
+        // files over six bands should cover all six, each mark printing at two
+        // sizes, rather than leaving the shipped marks on the dark half and
+        // making a mongrel of the ramp. Band 0 stays paper.
         const marked = settings.bands.length - 1;
-        specs.forEach((spec, offset) => {
-          const target = marked <= 0 ? 0 : 1 + Math.min(marked - 1, offset % marked);
-          settings.bands[target].glyphs = [spec.id];
-        });
+        if (marked <= 0 || specs.length === 0) return;
+        for (let band = 1; band <= marked; band += 1) {
+          const pick = Math.min(specs.length - 1, Math.floor(((band - 1) * specs.length) / marked));
+          settings.bands[band].glyphs = [specs[pick].id];
+          settings.bands[band].size = null;
+        }
         return;
       }
       const band = settings.bands[bandIndex];
