@@ -1,0 +1,595 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+html {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+}
+
+button,
+input,
+select {
+  color: inherit;
+  font: inherit;
+}
+
+button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .38;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- layout */
+
+.workspace {
+  display: grid;
+  min-height: calc(100vh - 6rem);
+  grid-template-columns: 15rem minmax(20rem, 1fr) 21rem;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.panel-left {
+  grid-area: 1 / 1 / 2 / 2;
+  border-right: 1px solid var(--rule);
+}
+
+.stage {
+  grid-area: 1 / 2 / 2 / 3;
+  border-right: 1px solid var(--rule);
+}
+
+.panel-right {
+  grid-area: 1 / 3 / 3 / 4;
+}
+
+.ramp {
+  grid-area: 2 / 1 / 3 / 3;
+  border-top: 1px solid var(--rule);
+}
+
+.panel {
+  display: flex;
+  min-width: 0;
+  max-height: calc(100vh - 6rem);
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.panel-block {
+  padding: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.panel-block h2 {
+  margin: 0 0 .75rem;
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.control-hint {
+  margin: .6rem 0 0;
+  color: var(--ink-2);
+  font-size: var(--step--2);
+  line-height: 1.45;
+}
+
+/* -------------------------------------------------------------- controls */
+
+.range-control {
+  margin-bottom: .9rem;
+}
+
+.range-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem;
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.range-head output {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.range-track {
+  position: relative;
+  height: 1.5rem;
+  margin-top: .3rem;
+}
+
+.range-track::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--rule);
+  content: "";
+}
+
+.range-fill {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  background: var(--ink);
+}
+
+.range-track input[type="range"] {
+  position: absolute;
+  width: 100%;
+  height: 1.5rem;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.range-track input[type="range"]::-webkit-slider-thumb {
+  width: .7rem;
+  height: .7rem;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--ink);
+  pointer-events: auto;
+}
+
+.range-track input[type="range"]::-moz-range-thumb {
+  width: .7rem;
+  height: .7rem;
+  border: 0;
+  background: var(--ink);
+  pointer-events: auto;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--ink);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field select {
+  min-width: 0;
+  flex: 1;
+  padding: .3rem .4rem;
+  border: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+}
+
+.field button,
+.button-row button,
+.button-like,
+.toggle-row button,
+.ramp-head button {
+  padding: .32rem .55rem;
+  border: 1px solid var(--rule);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.toggle-row {
+  display: flex;
+  margin-bottom: .7rem;
+  gap: -1px;
+}
+
+.toggle-row button {
+  flex: 1;
+}
+
+.toggle-row button + button {
+  margin-left: -1px;
+}
+
+.toggle-row button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.button-row {
+  display: flex;
+  margin-bottom: .5rem;
+  gap: .35rem;
+}
+
+.button-row button,
+.button-like {
+  flex: 1;
+  text-align: center;
+}
+
+.button-like {
+  cursor: pointer;
+}
+
+.button-like input,
+.drop input,
+.ramp-add input {
+  display: none;
+}
+
+button.primary {
+  display: block;
+  width: 100%;
+  padding: .55rem;
+  border: 0;
+  margin-top: .5rem;
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .18rem 0;
+  font: var(--step--2)/1.3 var(--font-mono);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.check input {
+  accent-color: var(--ink);
+}
+
+.drop {
+  display: grid;
+  min-height: 4.5rem;
+  border: 1px dashed var(--rule);
+  cursor: pointer;
+  place-items: center;
+  text-align: center;
+}
+
+.drop:hover {
+  border-color: var(--ink);
+}
+
+.drop span {
+  padding: .5rem;
+  color: var(--ink-2);
+  font: var(--step--2)/1.3 var(--font-mono);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+/* ----------------------------------------------------------------- stage */
+
+.stage {
+  display: flex;
+  min-width: 0;
+  max-height: calc(100vh - 6rem);
+  flex-direction: column;
+  padding: 1rem;
+  gap: .75rem;
+}
+
+/*
+ * The signature gesture, and the sibling of printor's transparency checker: a
+ * hairline grid at a fixed pitch. Fixed, not the live cell pitch — a grid that
+ * reflows while you drag the cells slider is nausea, not feedback.
+ */
+.canvas-stage {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  padding: 1rem;
+  background-color: color-mix(in srgb, var(--ink) 4%, var(--paper));
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+  place-items: center;
+}
+
+.output,
+.peek {
+  max-width: 100%;
+  /* One rule in both themes: it separates white artwork from a near-black
+     surround, and #ffffff from #f2f1ee, which would otherwise have no edge. */
+  max-height: calc(100vh - 18rem);
+  border: 1px solid var(--rule);
+  object-fit: contain;
+}
+
+.stage-empty {
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--step--2)/1.4 var(--font-mono);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.transport button {
+  padding: .3rem .6rem;
+  border: 1px solid var(--rule);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.transport input[type="range"] {
+  flex: 1;
+}
+
+.transport-readout {
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.notice {
+  margin: 0;
+  padding: .5rem .6rem;
+  border: 1px solid var(--rule);
+  font-size: var(--step--2);
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------- tone ramp */
+
+.ramp {
+  min-width: 0;
+  padding: .85rem 1rem 1rem;
+}
+
+.ramp-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: .6rem;
+}
+
+.ramp-head h2 {
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.ramp-legend {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: .5rem;
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.ramp-gradient {
+  height: .5rem;
+  flex: 1;
+  background: linear-gradient(to right, var(--paper), var(--ink));
+  outline: 1px solid var(--rule);
+}
+
+.ramp-columns {
+  display: flex;
+  overflow-x: auto;
+  gap: .35rem;
+}
+
+.ramp-column {
+  display: flex;
+  min-width: 4.5rem;
+  max-width: 7rem;
+  flex: 1;
+  flex-direction: column;
+  padding: .35rem;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
+  gap: .3rem;
+}
+
+.ramp-column.selected {
+  border-left-color: var(--ink);
+}
+
+.ramp-column.dropping {
+  border-color: var(--ink);
+}
+
+.ramp-well {
+  position: relative;
+  display: grid;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--rule);
+  /* The background is set inline: the well previews the printed sheet, which
+     is true white or true black and never follows the interface theme. */
+  aspect-ratio: 1;
+  place-items: center;
+}
+
+.ramp-well canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.ramp-paper {
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.ramp-badge,
+.ramp-warning {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 .2rem;
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--step--2)/1.3 var(--font-mono);
+}
+
+.ramp-warning {
+  top: 2px;
+  bottom: auto;
+}
+
+.ramp-readout {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ramp-manual {
+  color: var(--ink);
+}
+
+.ramp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2rem;
+}
+
+.ramp-chip,
+.ramp-add {
+  padding: .1rem .3rem;
+  border: 1px solid var(--rule);
+  font: var(--step--2)/1.3 var(--font-mono);
+  cursor: pointer;
+  text-transform: lowercase;
+}
+
+.ramp-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ramp-chip:hover,
+.ramp-add:hover {
+  border-color: var(--ink);
+}
+
+/* ---------------------------------------------------------- support page */
+
+.support-page {
+  width: min(100% - 2rem, 42rem);
+  margin: 0 auto;
+  padding: 2rem 0 3rem;
+  line-height: 1.55;
+}
+
+.support-page .kicker {
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.support-page h1 {
+  margin: .3rem 0 1.5rem;
+  font-size: var(--step-3);
+}
+
+.support-page h2 {
+  margin: 2rem 0 .5rem;
+  font-size: var(--step-1);
+}
+
+.support-page table {
+  width: 100%;
+  margin-bottom: 1rem;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+
+.support-page th,
+.support-page td {
+  padding: .45rem .5rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+}
+
+.support-page th {
+  color: var(--ink-2);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+/* ----------------------------------------------------------- narrow view */
+
+@media (max-width: 62rem) {
+  .workspace {
+    display: block;
+  }
+
+  .panel,
+  .stage {
+    max-height: none;
+    border-right: 0;
+  }
+
+  .panel-left,
+  .stage,
+  .ramp {
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .output,
+  .peek {
+    max-height: 60vh;
+  }
+}
