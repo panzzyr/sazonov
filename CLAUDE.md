@@ -31,6 +31,8 @@ pnpm --filter @sazonov/printor exec vitest run -t "deterministic"
 pnpm --filter @sazonov/printor lint              # generates textures, then tsc --noEmit
 node --test tests/site.test.mjs                  # single site test file (needs a site build)
 pnpm build:drafts                                # site build including draft: true content
+node scripts/build-glyph-presets.mjs             # rebuild the preset marks (needs assets/)
+node scripts/build-glyph-presets.mjs --sheet out # ...and print a proof sheet of every ladder
 SITE_URL=https://preview.example.com pnpm build  # override production origin
 ```
 
@@ -43,7 +45,8 @@ These fail the build, not just a lint warning:
   script, `/theme.js`; any other script or external stylesheet fails the build.
 - `apps/printor/scripts/budget.mjs` and `apps/glyph-art/scripts/budget.mjs` — each
   tool's `dist/assets/*.{js,css}` must stay under 300 KB gzip, and its
-  `dist/index.html` must still contain `connect-src 'none'`.
+  `dist/index.html` must still contain `connect-src 'none'`. glyph art's also
+  caps `dist/presets/` at 256 KB across every preset mark.
 - `tests/privacy.test.ts` in **both** tools — `public/_headers` and `index.html`
   must keep `connect-src 'none'`, and no file under `src/` may contain
   `fetch`/`XMLHttpRequest`/`WebSocket`/`sendBeacon`/`EventSource` or
@@ -51,7 +54,9 @@ These fail the build, not just a lint warning:
   in prose is fine.
 
 All three apps are static and client-only: no endpoints, no telemetry, no remote
-assets, no uploads. Adding any of those breaks the CSP tests.
+assets, no uploads. Adding any of those breaks the CSP tests. glyph art's preset
+marks are the one thing loaded after the bundle, and they are same-origin images
+under `img-src 'self'`, fetched by `<img>` — never by `fetch`.
 
 ## Repository layout
 
@@ -98,6 +103,8 @@ attribute means changing all of them.
 | --- | --- | --- |
 | `apps/site/src/_includes/generated/styles.css` | `scripts/build-css.mjs` (lightningcss) | `packages/tokens/tokens.css` + `apps/site/src/site.css` |
 | `apps/printor/src/generatedTextures.ts` | `apps/printor/scripts/generate-texture-library.mjs` | `apps/printor/public/textures/manifest.json` |
+| `apps/glyph-art/src/generatedPresets.ts` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` (scans, not in git) |
+| `apps/glyph-art/public/presets/` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` |
 | `apps/printor/public/textures/` | `scripts/build-texture-library.mjs` | `assets/` (full-resolution scans, not in git) |
 | `apps/site/_site/` | `eleventy` + `scripts/postbuild.mjs` | site sources |
 | `apps/printor/dist/` | `vite build` + `apps/printor/scripts/postbuild.mjs` | printor sources |
@@ -107,6 +114,13 @@ The manifest-to-TypeScript generator runs before every printor `dev`, `lint`, an
 `build`. To add a texture: drop the original in `assets/<group>/`, then run
 `node scripts/build-texture-library.mjs` from the repo root. `assets/` is
 gitignored — only the converted WebP library is committed.
+
+`build-glyph-presets.mjs` works the same way and is likewise manual, because it
+needs `assets/` which CI does not have. It converts each scan to an opaque grey
+mark — black ink on white paper, whatever polarity the scan arrived in — and
+re-solves the twelve-level ladder, so **adding one scan can move every level**.
+`--sheet <dir>` renders each ladder as real blocks of stamped cells; look at
+those before committing, because no table shows whether a ladder steps.
 
 ## printor architecture
 
@@ -207,13 +221,46 @@ Data flow:
 - `src/engine/render.ts` — one pass stamping marks into an alpha mask, then one
   `source-in` to colour it. The union in alpha is what makes overlapping ink
   idempotent and draw order irrelevant.
-- `src/export/` — same three files as printor, same shapes.
+- `src/engine/halftone.ts` — the second mode end to end: rotated lattice, plate
+  separation with GCR, dot area by shape. Everything above `HalftoneRenderer` is
+  arithmetic and unit-tested without a canvas.
+- `src/export/` — same three files as printor, same shapes. `pngSequence` also
+  writes one folder per separation plate when a halftone asks for it.
 - `src/projectState.ts` — validates untrusted project JSON; share links strip
   uploaded marks and substitute the shipped mark of the same band.
 
 **Adding a parameter touches four files in lockstep**: `types.ts` (field +
 default), `projectState.ts` (clamp), the engine module that consumes it, and the
 control in `App.tsx` or `components/RampEditor.tsx`.
+
+**Two modes, one tone field.** `settings.mode` is `glyph` or `halftone`, and
+they share only `engine/tone.ts`. A halftone has no cells and no marks: it is a
+frame-independent lattice at its own ruling and angle, tone is the *area* of a
+dot, and colour comes from screening separate plates 30° apart rather than from
+tinting one ink. `engine/halftone.ts` owns all of it; the bands, the ramp
+editor, the seed, `hand` and the cycling controls are hidden in that mode
+because none of them mean anything there. `sequenceSize` decides the frame for
+both modes — the renderer must never re-derive it from the tone field, or the
+preview and the H.264 encoder disagree by a pixel or two.
+
+**`peak` and `maxSize` are settings, not constants.** `peak` is the ink the
+darkest band asks for and `maxSize` is how far a mark may spill past its cell
+(nothing is ever clipped — marks stamp into a full-frame mask). `fitPeak` solves
+`peak` from `maxSize` across **every band and every pool member**; fitting on the
+darkest band alone leaves a sparse mark mid-ladder clamped, which is the failure
+`fit ramp` exists to prevent.
+
+**Presets are generated.** `generatedPresets.ts` carries four sets of scanned
+period marks and the twelve-level ladder solved for each, plus the ink density
+and proportion measured at build time. Those numbers are for tests and
+documentation only — the browser re-measures every mark on load and *that* is
+what the renderer uses; the two agree to a fraction of a percent, not exactly,
+because the browser re-rasterizes to 256 px first. `src/presets.ts` is the
+hand-written part: applying a preset changes the marks, the band count, `peak`
+and `maxSize`, and deliberately nothing about the picture. `projectState.ts`
+accepts a preset mark by **id membership** in `presetGlyphIds` and takes its
+path from this build, never from the file — a project file is untrusted input
+and that path goes straight into an `<img>`.
 
 **The preview is the export.** The raster is `grid × cellPixels(grid)`, derived
 from the grid rather than the source, so there is no proxy and none of printor's

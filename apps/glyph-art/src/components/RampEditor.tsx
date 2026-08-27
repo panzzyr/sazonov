@@ -110,10 +110,10 @@ export function RampEditor({
             ? pool[Math.floor(playhead / Math.max(1, settings.hold)) % pool.length]
             : pool[0];
           // The well shows the mark at the size it will actually print, which
-          // for a cycling band means its density-corrected size, not the
-          // band's nominal one.
+          // for a cycling band means its corrected size, not the band's
+          // nominal one — and clamped the same way the renderer clamps it.
           const shownSize = shown && pool[0]
-            ? solved.size * poolCorrection(pool[0].density, shown.density)
+            ? Math.min(settings.maxSize, solved.size * poolCorrection(pool[0], shown))
             : solved.size;
 
           const classes = ["ramp-column"];

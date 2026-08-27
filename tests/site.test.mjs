@@ -217,6 +217,29 @@ test("printor is nested under /printor/ and built for that sub-path", async () =
   }
 });
 
+test("glyph art is nested under /glyph-art/ with its preset marks", async () => {
+  const html = await page("/glyph-art/");
+  assert.match(html, /src="\/glyph-art\/assets\//, "glyph art script is not base-aware");
+  assert.doesNotMatch(html, /src="\/assets\//, "glyph art emitted root-absolute assets");
+  assert.match(html, /connect-src 'none'/, "glyph art lost its CSP");
+
+  await stat(path.join(output, "glyph-art/support/index.html"));
+
+  // The preset marks are the one thing loaded after the bundle. Missing them
+  // does not fail a build or a unit test — it fails silently in production,
+  // with every preset printing nothing.
+  const module = await readFile(
+    path.resolve("apps/glyph-art/src/generatedPresets.ts"),
+    "utf8",
+  );
+  const sources = [...module.matchAll(/source: "(presets\/[^"]+)"/g)].map((match) => match[1]);
+  assert.ok(sources.length >= 60, `only ${sources.length} preset marks are declared`);
+  for (const source of sources) {
+    const info = await stat(path.join(output, "glyph-art", source));
+    assert.ok(info.size > 0, source);
+  }
+});
+
 test("every page links printor at its deployed path", async () => {
   for (const route of ["/", "/about/", "/ru/", "/ru/about/", "/tools/", "/ru/tools/"]) {
     const html = await page(route);

@@ -17,6 +17,25 @@ const limit = 300 * 1024;
 console.log(`glyph art JS + CSS: ${gzipTotal} bytes gzip`);
 if (gzipTotal > limit) throw new Error(`glyph art exceeds the ${limit}-byte gzip target.`);
 
+// The preset marks are the one thing this tool loads off the network after the
+// bundle. They are small and lazy — a set is fetched only when it is picked —
+// but they are also the easiest thing here to grow without noticing, so they
+// get a ceiling of their own rather than riding on the JS budget.
+const presetRoot = path.join(output, "presets");
+let presetBytes = 0;
+let presetCount = 0;
+for (const set of await readdir(presetRoot)) {
+  for (const name of await readdir(path.join(presetRoot, set))) {
+    presetBytes += (await readFile(path.join(presetRoot, set, name))).byteLength;
+    presetCount += 1;
+  }
+}
+const presetLimit = 256 * 1024;
+console.log(`glyph art preset marks: ${presetBytes} bytes across ${presetCount} files`);
+if (presetBytes > presetLimit) {
+  throw new Error(`the preset library exceeds the ${presetLimit}-byte target.`);
+}
+
 const html = await readFile(path.join(output, "index.html"), "utf8");
 if (!html.includes("connect-src 'none'")) {
   throw new Error("glyph art CSP no longer prevents runtime connections.");

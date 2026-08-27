@@ -21,19 +21,31 @@ export type Range = { min: number; max: number };
  */
 export type ColorMode = "mono" | "source";
 
-/** Where a mark's artwork comes from. */
-export type GlyphKind = "mark" | "text" | "file";
+/**
+ *  glyph    — a raster rebuilt out of marks, where size carries the tone.
+ *  halftone — a rotated screen of dots. A different principle end to end: no
+ *             cells, no marks, no ramp; tone comes from the area of a dot on a
+ *             lattice with its own ruling and angle, and colour comes from
+ *             separating the source into plates rather than from one ink.
+ */
+export type Mode = "glyph" | "halftone";
 
-export const markKinds: GlyphKind[] = ["mark", "text", "file"];
+/** Where a mark's artwork comes from. */
+export type GlyphKind = "mark" | "text" | "file" | "preset";
+
+export const markKinds: GlyphKind[] = ["mark", "text", "file", "preset"];
 
 export type GlyphSpec = {
   id: string;
   label: string;
   kind: GlyphKind;
   /**
-   *  mark — inline SVG markup from the shipped set.
-   *  text — the character(s) to typeset.
-   *  file — a data URL for an uploaded PNG, JPEG or SVG.
+   *  mark   — inline SVG markup from the shipped set.
+   *  text   — the character(s) to typeset.
+   *  file   — a data URL for an uploaded PNG, JPEG or SVG.
+   *  preset — a path under the site's base URL, from `generatedPresets`. Never
+   *           a full URL: only the shipped paths are accepted when a project
+   *           is read back, so a project file cannot point the tool anywhere.
    */
   source: string;
   /** Font stack for a `text` glyph. Ignored otherwise. */
@@ -50,7 +62,54 @@ export type Band = {
   size: number | null;
 };
 
+/**
+ * Dot shape on the screen lattice. Every one of them is solved from the same
+ * quantity — the area of ink the cell owes — so switching shape changes the
+ * texture of the print without changing its tone.
+ */
+export type DotShape = "round" | "ellipse" | "square" | "diamond" | "line" | "cross";
+
+export const dotShapes: DotShape[] = ["round", "ellipse", "square", "diamond", "line", "cross"];
+
+/**
+ *  mono    — one black screen.
+ *  duotone — two screens at different angles in two inks of your choosing.
+ *  cmyk    — four plates at the classic angles, printed by multiplying.
+ */
+export type Separation = "mono" | "duotone" | "cmyk";
+
+export const separations: Separation[] = ["mono", "duotone", "cmyk"];
+
+export type HalftoneSettings = {
+  /** Screen ruling: lines across the frame's width. */
+  lines: number;
+  /** Rotation of the whole screen set, degrees. Plates keep their offsets. */
+  angle: number;
+  shape: DotShape;
+  separation: Separation;
+  /**
+   * Exponent on the tone before it becomes dot area. Under 1 opens the
+   * shadows, over 1 holds them back.
+   */
+  gain: number;
+  /**
+   * Dot gain, as a press has it: every dot is scaled by this before it prints.
+   * Over 1 is ink spreading into the paper, under 1 is a starved screen.
+   */
+  spread: number;
+  /**
+   * Grey component replacement, 0..1. At 0 the neutrals are built from cyan,
+   * magenta and yellow together; at 1 black carries them alone.
+   */
+  blackGeneration: number;
+  /** The two duotone inks, dark first. */
+  inks: [string, string];
+  /** Output width in pixels. The height follows the source's aspect. */
+  width: number;
+};
+
 export type Settings = {
+  mode: Mode;
   seed: number;
   /**
    * Cells across the width. The output's aspect follows the source, so there
@@ -62,6 +121,21 @@ export type Settings = {
   bands: Band[];
   /** Exponent of the tone curve. Higher prints lighter, lower prints heavier. */
   weight: number;
+  /**
+   * Ink coverage the darkest band asks for, 0..1.6.
+   *
+   * A property of the *set of marks*, not a taste setting: airy letterpress
+   * simply cannot cover as much of a cell as a solid woodblock without
+   * overflowing it, so each shipped preset carries its own. `fit ramp` solves
+   * it for whatever marks are loaded.
+   */
+  peak: number;
+  /**
+   * Size ceiling in cells. Marks are never clipped — the renderer stamps into
+   * a full-frame mask — but past this they knit into an unbroken mass instead
+   * of reading as separate marks.
+   */
+  maxSize: number;
   /** Black point and white point applied to the cell tones before banding. */
   levels: Range;
   /** One knob for seeded rotation, offset and size jitter per cell, 0..1. */
@@ -83,6 +157,7 @@ export type Settings = {
   hold: number;
   /** Marks available to the bands, including anything the user added. */
   glyphs: GlyphSpec[];
+  halftone: HalftoneSettings;
 };
 
 /**
@@ -99,6 +174,13 @@ export type MediaKind = "video" | "image";
 
 export const minGrid = 8;
 export const maxGrid = 240;
+export const minLines = 8;
+export const maxLines = 200;
+export const minGain = 0.5;
+export const maxGain = 2;
+export const minSpread = 0.7;
+export const maxSpread = 1.4;
+export const halftoneWidths = [1024, 1536, 2048, 3072];
 export const minBands = 2;
 export const maxBands = 24;
 export const minWeight = 0.6;
@@ -120,8 +202,13 @@ export const maxExportFrames = 900;
 export const minMarkSize = 0.05;
 export const maxMarkSize = 1.6;
 
-/** Ink coverage asked of the darkest band. Over 1 so its seams close. */
-export const coveragePeak = 1.05;
+/** Bounds on `settings.maxSize`. Never below 1: a mark has to fill its cell. */
+export const minSizeCeiling = 1;
+export const maxSizeCeiling = maxMarkSize;
+
+/** Bounds on `settings.peak`, the ink the darkest band asks for. */
+export const minPeak = 0.05;
+export const maxPeak = 1.6;
 
 export const fontStacks: { id: string; label: string; stack: string }[] = [
   { id: "mono", label: "mono", stack: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" },
@@ -159,10 +246,13 @@ export const defaultBandCount = 7;
  * because the band assignment depends on the band count.
  */
 export const defaultSettings: Settings = {
+  mode: "glyph",
   seed: 8471,
   grid: 72,
   bands: [],
   weight: 1.45,
+  peak: 1.05,
+  maxSize: maxMarkSize,
   levels: { min: 0, max: 1 },
   hand: 0,
   colorMode: "mono",
@@ -172,4 +262,32 @@ export const defaultSettings: Settings = {
   stillFrames: 1,
   hold: 2,
   glyphs: [],
+  halftone: {
+    // 60 lines across a 2048 frame is a 34-pixel dot: coarse enough to read as
+    // a screen rather than as a photograph, which is the only reason to
+    // halftone something on a screen in the first place.
+    lines: 60,
+    angle: 45,
+    shape: "round",
+    separation: "mono",
+    gain: 1,
+    spread: 1,
+    blackGeneration: 0.6,
+    inks: ["#14161a", "#c8452e"],
+    width: 2048,
+  },
 };
+
+/**
+ * Frame size for the halftone screen.
+ *
+ * Unlike the glyph grid, the screen is drawn as paths at fractional positions
+ * and is rotated anyway, so there is nothing to align to and no reason to
+ * derive the frame from the ruling. The width is chosen outright and the
+ * height follows the source. Both are even, so H.264 never resizes the frame.
+ */
+export function halftoneSize(width: number, sourceWidth: number, sourceHeight: number) {
+  const across = Math.max(2, Math.round(width / 2) * 2);
+  const aspect = sourceWidth > 0 && sourceHeight > 0 ? sourceHeight / sourceWidth : 1;
+  return { width: across, height: Math.max(2, Math.round((across * aspect) / 2) * 2) };
+}

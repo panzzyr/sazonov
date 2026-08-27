@@ -4,6 +4,7 @@ import { RampEditor } from "./components/RampEditor";
 import { RangeControl, SliderControl } from "./components/RangeControl";
 import { GlyphLibrary, readFileAsDataUrl } from "./engine/glyphLibrary";
 import { GlyphRenderer } from "./engine/render";
+import { HalftoneRenderer } from "./engine/halftone";
 import { solveRamp } from "./engine/ramp";
 import { loopLength } from "./engine/cellParams";
 import { autoLevels, gridSize, sampleSource, type ToneField } from "./engine/tone";
@@ -12,28 +13,46 @@ import { canEncodeMp4, exportMp4 } from "./export/mp4";
 import {
   downloadBlob,
   frameCount,
+  halftoneField,
   sequenceSize,
   MAX_EXPORT_FRAMES,
   type ExportSource,
 } from "./export/renderSequence";
+import { activePreset, presets } from "./presets";
 import { decodeSettings, encodeSettings, hasCustomMarks, parseSettings } from "./projectState";
 import { useGlyphArtStore } from "./store";
 import {
   cellPixels,
+  dotShapes,
   fontStacks,
+  halftoneWidths,
   maxBands,
   maxFps,
+  maxGain,
   maxGrid,
   maxHold,
+  maxLines,
+  maxPeak,
+  maxSizeCeiling,
+  maxSpread,
   maxWeight,
   minBands,
   minFps,
+  minGain,
   minGrid,
   minHold,
+  minLines,
+  minPeak,
+  minSizeCeiling,
+  minSpread,
   minWeight,
+  separations,
+  type DotShape,
   type ExportFormat,
   type ExportInk,
   type GlyphSpec,
+  type HalftoneSettings,
+  type Separation,
 } from "./types";
 
 const STORAGE_KEY = "glyph-art-project-v1";
@@ -103,6 +122,8 @@ export function App() {
   const selectBand = useGlyphArtStore((state) => state.selectBand);
   const setGlobal = useGlyphArtStore((state) => state.setGlobal);
   const setBandCount = useGlyphArtStore((state) => state.setBandCount);
+  const usePreset = useGlyphArtStore((state) => state.usePreset);
+  const fitRamp = useGlyphArtStore((state) => state.fitRamp);
   const setBandGlyphs = useGlyphArtStore((state) => state.setBandGlyphs);
   const setBandSize = useGlyphArtStore((state) => state.setBandSize);
   const addGlyphs = useGlyphArtStore((state) => state.addGlyphs);
@@ -125,9 +146,11 @@ export function App() {
   const [markText, setMarkText] = useState("");
   const [markFont, setMarkFont] = useState(fontStacks[0].id);
   const [libraryVersion, setLibraryVersion] = useState(0);
+  const [separationPlates, setSeparationPlates] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<GlyphRenderer | null>(null);
+  const halftoneRef = useRef<HalftoneRenderer | null>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
   const libraryRef = useRef<GlyphLibrary | null>(null);
   const glyphsRef = useRef(settings.glyphs);
@@ -175,6 +198,8 @@ export function App() {
 
   const totalFrames = exportSource ? frameCount(exportSource, settings) : 1;
   const raster = exportSource ? sequenceSize(exportSource, settings) : null;
+  const frameWidth = raster?.width ?? 0;
+  const frameHeight = raster?.height ?? 0;
 
   // Restore a shared link first, then whatever was last open on this machine.
   useEffect(() => {
@@ -208,7 +233,12 @@ export function App() {
       return;
     }
     let cancelled = false;
-    const { gridW, gridH } = gridSize(settings.grid, media.width, media.height);
+    // A halftone dot reads the picture at its own centre, so the field it reads
+    // is not the screen and has nothing to do with the ruling; the glyph path's
+    // field *is* the cell grid. One sampling step, two very different grids.
+    const { gridW, gridH } = settings.mode === "halftone"
+      ? halftoneField(settings, media.width, media.height)
+      : gridSize(settings.grid, media.width, media.height);
 
     const run = async () => {
       if (media.kind === "video") {
@@ -223,7 +253,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [media, settings.grid, settings.targetFps, videoFrame]);
+  }, [media, settings.mode, settings.grid, settings.halftone.width, settings.targetFps, videoFrame]);
 
   // Auto-levels, once per source. A flat photo quantized into seven bands uses
   // four of them and looks dead; per-frame levels on a video would pump.
@@ -243,13 +273,27 @@ export function App() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !field) return;
-    if (!rendererRef.current) rendererRef.current = new GlyphRenderer(canvas);
     try {
+      if (settings.mode === "halftone") {
+        if (frameWidth === 0) return;
+        if (!halftoneRef.current) halftoneRef.current = new HalftoneRenderer(canvas);
+        halftoneRef.current.render({
+          settings,
+          field,
+          ink: "flat",
+          frame: { width: frameWidth, height: frameHeight },
+        });
+        return;
+      }
+      if (!rendererRef.current) rendererRef.current = new GlyphRenderer(canvas);
       rendererRef.current.render({ settings, field, library, frame, ink: "flat", ramp });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "This frame could not be drawn.");
     }
-  }, [field, settings, frame, library, libraryVersion, ramp]);
+    // `raster` is a fresh object every render, so the frame enters as two
+    // numbers; depending on the object would redraw the screen on every
+    // keystroke anywhere in the interface.
+  }, [field, settings, frame, frameWidth, frameHeight, library, libraryVersion, ramp]);
 
   useEffect(() => {
     if (frame < totalFrames) return;
@@ -380,6 +424,7 @@ export function App() {
           library,
           signal: controller.signal,
           inks,
+          separations: separationPlates,
           basename: stem,
           onProgress,
         });
@@ -402,7 +447,7 @@ export function App() {
       abortRef.current = null;
       setBusy(null);
     }
-  }, [exportSource, format, inks, library, media?.name, settings, totalFrames]);
+  }, [exportSource, format, inks, library, media?.name, separationPlates, settings, totalFrames]);
 
   const copyShareLink = useCallback(() => {
     window.location.hash = `p=${encodeSettings(settings)}`;
@@ -467,11 +512,45 @@ export function App() {
   const cell = cellPixels(settings.grid);
   const seamless = loopLength(settings.bands.map((band) => band.glyphs.length), settings.hold);
   const cycling = settings.bands.some((band) => band.glyphs.length > 1);
+  const halftoning = settings.mode === "halftone";
+  const halftone = settings.halftone;
+  const preset = activePreset(settings);
+
+  const setHalftone = <Key extends keyof HalftoneSettings>(
+    key: Key,
+    value: HalftoneSettings[Key],
+  ) => setGlobal("halftone", { ...halftone, [key]: value }, `halftone.${String(key)}`);
 
   return (
     <ToolShell name="glyph art">
       <div className="workspace">
         <aside className="panel panel-left" aria-label="Source and grid">
+          <section className="panel-block">
+            <h2>mode</h2>
+            <div className="toggle-row">
+              <button
+                type="button"
+                aria-pressed={!halftoning}
+                onClick={() => setGlobal("mode", "glyph")}
+              >
+                glyphs
+              </button>
+              <button
+                type="button"
+                aria-pressed={halftoning}
+                onClick={() => setGlobal("mode", "halftone")}
+              >
+                halftone
+              </button>
+            </div>
+            <p className="control-hint">
+              {halftoning
+                ? "A rotated screen of dots. Tone is the area of a dot, so there are no cells, "
+                  + "no marks and no ramp — the controls below are a press, not a grid."
+                : "One mark per cell, where the size of the mark carries the tone."}
+            </p>
+          </section>
+
           <section className="panel-block">
             <h2>source</h2>
             {/* Not image/*: an SVG source cannot be relied on to decode through
@@ -496,6 +575,32 @@ export function App() {
             )}
           </section>
 
+          {!halftoning && (
+            <section className="panel-block">
+              <h2>presets</h2>
+              <div className="preset-grid">
+                {presets.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    aria-pressed={preset?.id === entry.id}
+                    onClick={() => usePreset(entry)}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
+              <p className="control-hint">
+                Each set is scanned type and marks of its period, sorted onto twelve levels:
+                every level prints at least two of them, and the darkest four. A mark serves
+                two or three levels at different sizes, so a level is a texture rather than a
+                repeated stamp. Only the marks change — the grid, the levels and the
+                inversions stay where you put them.
+              </p>
+            </section>
+          )}
+
+          {!halftoning && (
           <section className="panel-block">
             <h2>grid</h2>
             <SliderControl
@@ -519,6 +624,7 @@ export function App() {
               {cell < 8 && " At this many cells the marks are smaller than 8px and stop reading as marks."}
             </p>
           </section>
+          )}
 
           <section className="panel-block">
             <h2>tone</h2>
@@ -530,26 +636,174 @@ export function App() {
               step={0.01}
               onChange={(value) => setGlobal("levels", value)}
             />
-            <SliderControl
-              label="bands"
-              value={settings.bands.length}
-              min={minBands}
-              max={maxBands}
-              onChange={(value) => setBandCount(value)}
-            />
-            <SliderControl
-              label="weight"
-              value={settings.weight}
-              min={minWeight}
-              max={maxWeight}
-              step={0.05}
-              onChange={(value) => setGlobal("weight", value)}
-            />
-            <p className="control-hint">
-              weight bends the whole ramp. Lower prints heavier, higher prints lighter and airier.
-            </p>
+            {halftoning ? (
+              <>
+                <SliderControl
+                  label="gain"
+                  value={halftone.gain}
+                  min={minGain}
+                  max={maxGain}
+                  step={0.05}
+                  onChange={(value) => setHalftone("gain", value)}
+                />
+                <SliderControl
+                  label="spread"
+                  value={halftone.spread}
+                  min={minSpread}
+                  max={maxSpread}
+                  step={0.01}
+                  onChange={(value) => setHalftone("spread", value)}
+                />
+                <p className="control-hint">
+                  gain bends tone into dot area — under 1 opens the shadows, over 1 holds them
+                  back. spread is the press: every dot is scaled before it prints, so over 1 is
+                  ink bleeding into the paper and under 1 is a starved screen.
+                </p>
+              </>
+            ) : (
+              <>
+                <SliderControl
+                  label="bands"
+                  value={settings.bands.length}
+                  min={minBands}
+                  max={maxBands}
+                  onChange={(value) => setBandCount(value)}
+                />
+                <SliderControl
+                  label="weight"
+                  value={settings.weight}
+                  min={minWeight}
+                  max={maxWeight}
+                  step={0.05}
+                  onChange={(value) => setGlobal("weight", value)}
+                />
+                <SliderControl
+                  label="max ink"
+                  value={settings.peak}
+                  min={minPeak}
+                  max={maxPeak}
+                  step={0.01}
+                  onChange={(value) => setGlobal("peak", value)}
+                />
+                <SliderControl
+                  label="max mark"
+                  value={settings.maxSize}
+                  min={minSizeCeiling}
+                  max={maxSizeCeiling}
+                  step={0.01}
+                  onChange={(value) => setGlobal("maxSize", value)}
+                />
+                <div className="button-row">
+                  <button type="button" onClick={() => fitRamp(library.metrics)}>fit ramp</button>
+                </div>
+                <p className="control-hint">
+                  weight bends the whole ramp. max ink is what the darkest level asks for, and
+                  max mark is how far a mark may spill past its cell — nothing is ever clipped,
+                  but past about 1.2 the marks knit into a mass instead of staying countable.
+                  fit ramp solves max ink so the darkest level lands exactly on max mark, which
+                  is how a set of your own marks gets a full ramp.
+                </p>
+              </>
+            )}
           </section>
 
+          {halftoning && (
+            <section className="panel-block">
+              <h2>screen</h2>
+              <SliderControl
+                label="lines"
+                value={halftone.lines}
+                min={minLines}
+                max={maxLines}
+                onChange={(value) => setHalftone("lines", Math.round(value))}
+              />
+              <SliderControl
+                label="angle"
+                value={halftone.angle}
+                min={0}
+                max={90}
+                unit="°"
+                onChange={(value) => setHalftone("angle", Math.round(value))}
+              />
+              <div className="field">
+                <label htmlFor="dot-shape">dot</label>
+                <select
+                  id="dot-shape"
+                  value={halftone.shape}
+                  onChange={(event) => setHalftone("shape", event.target.value as DotShape)}
+                >
+                  {dotShapes.map((shape) => (
+                    <option key={shape} value={shape}>{shape}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="control-hint">
+                lines is the ruling across the frame — {halftone.lines} of them across{" "}
+                {halftone.width}px is a {(halftone.width / halftone.lines).toFixed(0)}px dot.
+                Every shape is solved from the same ink area, so changing it changes the
+                texture of the print and not its tone.
+              </p>
+            </section>
+          )}
+
+          {halftoning && (
+            <section className="panel-block">
+              <h2>separation</h2>
+              <div className="toggle-row">
+                {separations.map((entry) => (
+                  <button
+                    key={entry}
+                    type="button"
+                    aria-pressed={halftone.separation === entry}
+                    onClick={() => setHalftone("separation", entry as Separation)}
+                  >
+                    {entry}
+                  </button>
+                ))}
+              </div>
+              {halftone.separation === "cmyk" && (
+                <SliderControl
+                  label="black"
+                  value={halftone.blackGeneration}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  onChange={(value) => setHalftone("blackGeneration", value)}
+                />
+              )}
+              {halftone.separation === "duotone" && (
+                <div className="field">
+                  <label htmlFor="ink-one">inks</label>
+                  <input
+                    id="ink-one"
+                    type="color"
+                    value={halftone.inks[0]}
+                    aria-label="First duotone ink"
+                    onChange={(event) => setHalftone("inks", [event.target.value, halftone.inks[1]])}
+                  />
+                  <input
+                    type="color"
+                    value={halftone.inks[1]}
+                    aria-label="Second duotone ink"
+                    onChange={(event) => setHalftone("inks", [halftone.inks[0], event.target.value])}
+                  />
+                </div>
+              )}
+              <p className="control-hint">
+                {halftone.separation === "cmyk"
+                  ? "Four plates at 15°, 75°, 0° and 45°, multiplied like wet ink. black is grey "
+                    + "component replacement: at 0 the neutrals are built from cyan, magenta and "
+                    + "yellow together; at 1 black carries them alone, the way newsprint does."
+                  : halftone.separation === "duotone"
+                    ? "Two screens 30° apart. The second ink is held out of the highlights, so the "
+                      + "pair reads as two inks rather than as one ink printed twice."
+                    : "One screen. The angle is the only thing standing between it and the frame, "
+                      + "which is why 45° is the default: a dot grid disappears there."}
+              </p>
+            </section>
+          )}
+
+          {!halftoning && (
           <section className="panel-block">
             <h2>marks</h2>
             <div className="field">
@@ -595,6 +849,7 @@ export function App() {
               band in the ramp below adds them all to that band, where they cycle.
             </p>
           </section>
+          )}
         </aside>
 
         <main
@@ -640,34 +895,51 @@ export function App() {
         <aside className="panel panel-right" aria-label="Output and export">
           <section className="panel-block">
             <h2>output</h2>
-            <div className="field">
-              <label htmlFor="seed">seed</label>
-              <input
-                id="seed"
-                type="number"
-                min={0}
-                value={settings.seed}
-                onChange={(event) => setGlobal("seed", Math.max(0, Number(event.target.value) >>> 0))}
-              />
-              <button type="button" onClick={reroll}>reroll</button>
-            </div>
+            {!halftoning && (
+              <div className="field">
+                <label htmlFor="seed">seed</label>
+                <input
+                  id="seed"
+                  type="number"
+                  min={0}
+                  value={settings.seed}
+                  onChange={(event) => setGlobal("seed", Math.max(0, Number(event.target.value) >>> 0))}
+                />
+                <button type="button" onClick={reroll}>reroll</button>
+              </div>
+            )}
 
-            <div className="toggle-row">
-              <button
-                type="button"
-                aria-pressed={settings.colorMode === "mono"}
-                onClick={() => setGlobal("colorMode", "mono")}
-              >
-                mono
-              </button>
-              <button
-                type="button"
-                aria-pressed={settings.colorMode === "source"}
-                onClick={() => setGlobal("colorMode", "source")}
-              >
-                source colour
-              </button>
-            </div>
+            {halftoning ? (
+              <div className="field">
+                <label htmlFor="halftone-width">frame</label>
+                <select
+                  id="halftone-width"
+                  value={halftone.width}
+                  onChange={(event) => setHalftone("width", Number(event.target.value))}
+                >
+                  {halftoneWidths.map((width) => (
+                    <option key={width} value={width}>{width}px wide</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="toggle-row">
+                <button
+                  type="button"
+                  aria-pressed={settings.colorMode === "mono"}
+                  onClick={() => setGlobal("colorMode", "mono")}
+                >
+                  mono
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={settings.colorMode === "source"}
+                  onClick={() => setGlobal("colorMode", "source")}
+                >
+                  source colour
+                </button>
+              </div>
+            )}
 
             <label className="check">
               <input
@@ -677,17 +949,22 @@ export function App() {
               />
               invert colour
             </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={settings.rampInvert}
-                onChange={(event) => setGlobal("rampInvert", event.target.checked)}
-              />
-              invert ramp
-            </label>
+            {!halftoning && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={settings.rampInvert}
+                  onChange={(event) => setGlobal("rampInvert", event.target.checked)}
+                />
+                invert ramp
+              </label>
+            )}
             <p className="control-hint">
-              invert colour swaps ink and paper. invert ramp moves the heavy marks onto the
-              bright cells instead of the dark ones.
+              {halftoning
+                ? "invert colour takes the frame's negative: white dots on black, and the "
+                  + "colour negative of a plate composite. The dots keep their sizes."
+                : "invert colour swaps ink and paper. invert ramp moves the heavy marks onto "
+                  + "the bright cells instead of the dark ones."}
             </p>
           </section>
 
@@ -701,20 +978,27 @@ export function App() {
               unit=" fps"
               onChange={(value) => setGlobal("targetFps", Math.round(value))}
             />
-            <SliderControl
-              label="hold"
-              value={settings.hold}
-              min={minHold}
-              max={maxHold}
-              onChange={(value) => setGlobal("hold", Math.round(value))}
-            />
-            <p className="control-hint">
-              {cycling
-                ? `Each mark is held ${settings.hold} frame${settings.hold === 1 ? "" : "s"} — `
-                  + `${(settings.targetFps / settings.hold).toFixed(1)} marks a second. `
-                  + `Cells are out of phase with each other, so the surface simmers instead of flipping.`
-                : "Put more than one mark on a band and they will cycle. Until then nothing moves."}
-            </p>
+            {/* hold and the seamless loop are properties of a cycling band, and
+                a halftone has no bands: a still screened at a fixed ruling is
+                the same frame every time, so offering either would be a lie. */}
+            {!halftoning && (
+              <>
+                <SliderControl
+                  label="hold"
+                  value={settings.hold}
+                  min={minHold}
+                  max={maxHold}
+                  onChange={(value) => setGlobal("hold", Math.round(value))}
+                />
+                <p className="control-hint">
+                  {cycling
+                    ? `Each mark is held ${settings.hold} frame${settings.hold === 1 ? "" : "s"} — `
+                      + `${(settings.targetFps / settings.hold).toFixed(1)} marks a second. `
+                      + `Cells are out of phase with each other, so the surface simmers instead of flipping.`
+                    : "Put more than one mark on a band and they will cycle. Until then nothing moves."}
+                </p>
+              </>
+            )}
             {media?.kind === "image" && (
               <>
                 <SliderControl
@@ -724,15 +1008,22 @@ export function App() {
                   max={240}
                   onChange={(value) => setGlobal("stillFrames", Math.round(value))}
                 />
-                <div className="button-row">
-                  <button
-                    type="button"
-                    onClick={() => setGlobal("stillFrames", seamless)}
-                    disabled={settings.stillFrames === seamless}
-                  >
-                    seamless loop: {seamless}
-                  </button>
-                </div>
+                {halftoning ? (
+                  <p className="control-hint">
+                    A still under a fixed screen is the same frame every time. Length only
+                    matters for a video, or if you want a still held as a clip.
+                  </p>
+                ) : (
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      onClick={() => setGlobal("stillFrames", seamless)}
+                      disabled={settings.stillFrames === seamless}
+                    >
+                      seamless loop: {seamless}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </section>
@@ -765,9 +1056,21 @@ export function App() {
                     {ink === "flat" ? "flat" : ink === "ink" ? "marks → alpha" : "paper → alpha"}
                   </label>
                 ))}
+                {halftoning && halftone.separation !== "mono" && (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={separationPlates}
+                      onChange={(event) => setSeparationPlates(event.target.checked)}
+                    />
+                    separations
+                  </label>
+                )}
                 <p className="control-hint">
                   Each pass gets its own folder in the ZIP. With invert colour that covers all
                   four variants.
+                  {halftoning && halftone.separation !== "mono"
+                    && " separations adds one folder per plate, black on white — what a printer loads."}
                 </p>
               </>
             ) : (
@@ -820,6 +1123,7 @@ export function App() {
           </section>
         </aside>
 
+        {!halftoning && (
         <RampEditor
           settings={settings}
           ramp={ramp}
@@ -833,6 +1137,7 @@ export function App() {
           onRemove={removeFromBand}
           onRebalance={rebalanceBands}
         />
+        )}
       </div>
     </ToolShell>
   );

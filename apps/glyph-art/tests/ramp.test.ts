@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   bandCenter,
+  cellCoverage,
   clampSize,
   coverageFor,
+  fitPeak,
   poolCorrection,
   rawSize,
   rebalance,
@@ -10,7 +12,7 @@ import {
 } from "../src/engine/ramp";
 import { defaultBandGlyphs, markDefinitions } from "../src/engine/marks";
 import { initialSettings } from "../src/store";
-import { maxMarkSize, type Settings } from "../src/types";
+import { defaultSettings, maxMarkSize, type Settings } from "../src/types";
 
 /** Stand-in for the browser's measurement, with the densities the set aims at. */
 const densities: Record<string, number> = {
@@ -45,7 +47,7 @@ describe("the tone curve", () => {
       for (const weight of [0.6, 1, 1.45, 2.4]) {
         let previous = -1;
         for (let index = 0; index < bands; index += 1) {
-          const coverage = coverageFor(bandCenter(index, bands), weight);
+          const coverage = coverageFor(bandCenter(index, bands), weight, 1.05);
           expect(coverage).toBeGreaterThan(previous);
           previous = coverage;
         }
@@ -53,9 +55,10 @@ describe("the tone curve", () => {
     }
   });
 
-  it("never asks for coverage outside the authored peak", () => {
-    expect(coverageFor(0, 1.45)).toBe(0);
-    expect(coverageFor(1, 1.45)).toBeCloseTo(1.05);
+  it("never asks for coverage outside the peak it was given", () => {
+    expect(coverageFor(0, 1.45, 1.05)).toBe(0);
+    expect(coverageFor(1, 1.45, 1.05)).toBeCloseTo(1.05);
+    expect(coverageFor(1, 1.45, 0.3)).toBeCloseTo(0.3);
   });
 });
 
@@ -81,6 +84,7 @@ describe("solving size from coverage", () => {
   });
 
   it("keeps the shipped set climbing across every band", () => {
+    expect(defaultSettings.peak).toBeCloseTo(1.05);
     const solved = solveRamp(sevenBands(), lookup);
     expect(solved[0].size).toBe(0);
     let previous = 0;
@@ -112,21 +116,102 @@ describe("solving size from coverage", () => {
   });
 
   it("clamps a hand-set size into the drawable range", () => {
-    expect(clampSize(9)).toBe(maxMarkSize);
-    expect(clampSize(0)).toBeGreaterThan(0);
+    expect(clampSize(9, maxMarkSize)).toBe(maxMarkSize);
+    expect(clampSize(0, maxMarkSize)).toBeGreaterThan(0);
+  });
+
+  it("honours a tightened ceiling instead of the absolute one", () => {
+    const settings = { ...sevenBands(), maxSize: 1 };
+    const solved = solveRamp(settings, lookup);
+    for (const band of solved) expect(band.size).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("fitting the ramp to the marks", () => {
+  it("lands the darkest band exactly on the ceiling", () => {
+    for (const ceiling of [1, 1.15, 1.6]) {
+      for (const density of [0.12, 0.4, 0.9]) {
+        const settings = { ...sevenBands(), maxSize: ceiling };
+        settings.peak = fitPeak(settings, () => ({ density, aspect: 1 }));
+        const solved = solveRamp(settings, () => ({ density, aspect: 1 }));
+        expect(solved.at(-1)!.size).toBeCloseTo(ceiling, 6);
+        expect(solved.at(-1)!.clamped).toBe(false);
+      }
+    }
+  });
+
+  it("gives a sparse set a lighter ramp than a solid one, rather than clamping it", () => {
+    const sparse = { ...sevenBands(), maxSize: 1.15 };
+    sparse.peak = fitPeak(sparse, () => ({ density: 0.1, aspect: 1 }));
+    const solid = { ...sevenBands(), maxSize: 1.15 };
+    solid.peak = fitPeak(solid, () => ({ density: 0.9, aspect: 1 }));
+    expect(sparse.peak).toBeLessThan(solid.peak);
+  });
+
+  it("leaves the peak alone when no band holds a measurable mark", () => {
+    const settings = sevenBands();
+    for (const band of settings.bands) band.glyphs = [];
+    expect(fitPeak(settings, lookup)).toBe(settings.peak);
+  });
+
+  it("is held back by a sparse mark in the middle, not only by the darkest band", () => {
+    const settings = { ...sevenBands(), maxSize: 1.15 };
+    // A hairline on band 3 cannot print band 3's ink at any size that fits, so
+    // the whole ramp has to come down to it — fitting on the last band alone
+    // would leave band 3 clamped and the middle of the ladder flat.
+    const sparse = (id: string) => (settings.bands[3].glyphs.includes(id)
+      ? { density: 0.05, aspect: 1 }
+      : { density: 0.7, aspect: 1 });
+
+    settings.peak = fitPeak(settings, sparse);
+    const solved = solveRamp(settings, sparse);
+    for (const band of solved) {
+      expect(band.size).toBeLessThanOrEqual(settings.maxSize + 1e-9);
+      expect(band.clamped).toBe(false);
+    }
+    expect(solved[3].size).toBeCloseTo(settings.maxSize, 6);
+  });
+
+  it("keeps every mark of a cycling band inside the ceiling too", () => {
+    const settings = { ...sevenBands(), maxSize: 1.15 };
+    settings.bands[6].glyphs = ["mark-blot", "mark-ring"];
+    const mixed = (id: string) => (id === "mark-ring"
+      ? { density: 0.08, aspect: 1 }
+      : { density: 0.7, aspect: 1 });
+
+    settings.peak = fitPeak(settings, mixed);
+    const solved = solveRamp(settings, mixed);
+    const reference = mixed("mark-blot");
+    const sparseSize = solved[6].size * poolCorrection(reference, mixed("mark-ring"));
+    expect(sparseSize).toBeLessThanOrEqual(settings.maxSize + 1e-9);
   });
 });
 
 describe("cycling within a band", () => {
   it("prints the same coverage whatever the pool member's density", () => {
-    const bandSize = rawSize(0.5, 0.6, 1);
-    const corrected = bandSize * poolCorrection(0.6, 0.3);
+    const reference = { density: 0.6, aspect: 1 };
+    const other = { density: 0.3, aspect: 1 };
+    const bandSize = rawSize(0.5, reference.density, reference.aspect);
+    const corrected = bandSize * poolCorrection(reference, other);
     // Half the density needs the same ink, so it prints at the same coverage.
-    expect(0.3 * corrected * corrected).toBeCloseTo(0.6 * bandSize * bandSize, 6);
+    expect(other.density * corrected ** 2).toBeCloseTo(reference.density * bandSize ** 2, 6);
+  });
+
+  it("corrects for proportion too, not only for density", () => {
+    // A mark twice as wide as it is tall only reaches half the cell in the
+    // short direction, so it inks half of what its density suggests. A
+    // correction on density alone would print this pair two tones apart.
+    const reference = { density: 0.6, aspect: 1 };
+    const wide = { density: 0.6, aspect: 2 };
+    const bandSize = rawSize(0.4, reference.density, reference.aspect);
+    const corrected = bandSize * poolCorrection(reference, wide);
+    expect(cellCoverage(wide.density, wide.aspect) * corrected ** 2)
+      .toBeCloseTo(cellCoverage(reference.density, reference.aspect) * bandSize ** 2, 6);
   });
 
   it("leaves the reference mark untouched", () => {
-    expect(poolCorrection(0.6, 0.6)).toBe(1);
+    const mark = { density: 0.6, aspect: 1 };
+    expect(poolCorrection(mark, mark)).toBe(1);
   });
 });
 

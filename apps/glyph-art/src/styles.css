@@ -224,6 +224,36 @@ input[type="range"] {
   color: var(--paper);
 }
 
+/* Four sets never fit on one row at this width, and a wrapping toggle-row
+   loses the joined-segment look. Two by two keeps the labels readable. */
+.preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: .7rem;
+  gap: .35rem;
+}
+
+.preset-grid button {
+  padding: .32rem .4rem;
+  border: 1px solid var(--rule);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.preset-grid button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.field input[type="color"] {
+  width: 2.2rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: transparent;
+}
+
 .button-row {
   display: flex;
   margin-bottom: .5rem;

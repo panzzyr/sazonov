@@ -100,9 +100,14 @@ export class GlyphRenderer {
         if (!chosen || chosen.density <= 0) continue;
 
         const hand = handDraw(settings.seed, cellIndex, settings.hand);
-        const size = ramp[band].size
-          * poolCorrection(reference.density, chosen.density)
-          * hand.sizeScale;
+        // The ceiling binds every mark in the pool, not only the band's
+        // reference: a mark corrected up to match the reference's coverage can
+        // land past it, and the promise is that no mark overflows its cell by
+        // more than the user asked for.
+        const size = Math.min(
+          settings.maxSize,
+          ramp[band].size * poolCorrection(reference, chosen) * hand.sizeScale,
+        );
         if (size < minMarkSize) continue;
 
         const long = size * cell;

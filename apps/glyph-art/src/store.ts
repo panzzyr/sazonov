@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { defaultBandGlyphs, markSpecs } from "./engine/marks";
-import { rebalance } from "./engine/ramp";
+import { fitPeak, rebalance, type DensityLookup } from "./engine/ramp";
+import { applyPreset, type Preset } from "./presets";
 import {
   defaultBandCount,
   defaultSettings,
@@ -55,9 +56,13 @@ export function resampleBands(bands: Band[], count: number): Band[] {
 }
 
 type GlobalKey =
+  | "mode"
   | "seed"
   | "grid"
   | "weight"
+  | "peak"
+  | "maxSize"
+  | "halftone"
   | "hand"
   | "colorMode"
   | "invert"
@@ -83,6 +88,8 @@ type GlyphArtStore = {
   addGlyphs: (specs: GlyphSpec[], bandIndex?: number) => void;
   removeGlyph: (id: string) => void;
   rebalanceBands: () => void;
+  usePreset: (preset: Preset) => void;
+  fitRamp: (lookup: DensityLookup) => void;
   replaceSettings: (settings: Settings) => void;
   reroll: () => void;
   undo: () => void;
@@ -178,6 +185,15 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
     }),
 
     rebalanceBands: () => edit((settings) => {
+      settings.bands = rebalance(settings.bands);
+    }),
+
+    usePreset: (preset) => edit((settings) => {
+      applyPreset(settings, preset);
+    }),
+
+    fitRamp: (lookup) => edit((settings) => {
+      settings.peak = fitPeak(settings, lookup);
       settings.bands = rebalance(settings.bands);
     }),
 

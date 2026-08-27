@@ -1,5 +1,71 @@
 # Architecture decisions
 
+## 2026-08-27 — Preset levels are solved from size, not authored per mark
+
+- **Decision:** Which of the twelve levels a scanned mark prints on is decided by
+  `scripts/build-glyph-presets.mjs`, not by hand. Every scan is measured for ink
+  density, proportion and median stroke width; a mark is eligible for a level if
+  the size it must print at to hit that level's ink lands inside
+  `[0.14, 1.15]` cells, and is ranked within it by how near that size is to
+  two-thirds of a cell and how many pixels of stroke survives at print size. A
+  mark may serve up to three levels at different sizes.
+- **Alternatives:** Sort the marks by their own ink and hand the darkest to the
+  darkest level — the natural reading of "pixelize each glyph and compare", and
+  what a designer does in Photoshop.
+- **Reason:** A mark's own density does not decide its level, because the solver
+  can print any mark at any level by changing its size. What actually fails is
+  the size: a solid woodblock reaches a light level only by shrinking to grit,
+  and an airy letter reaches a dark one only by overflowing its cell. Sorting by
+  density fixes one mark per level and throws away the reuse that gives a level
+  its texture. Stroke width is the second gate because it catches the failure
+  the coverage arithmetic cannot: a mark of fine rules at a third of a cell is a
+  grey smudge long before it is too small to see.
+- **Consequences:** Adding a scan means dropping it in `assets/glyph-presets/`
+  and re-running the script; the levels re-solve and may move. The originals
+  stay out of git, as printor's texture scans do. `tests/presets.test.ts`
+  asserts the guarantees the solve is supposed to give — twelve levels, two
+  marks each and four on the darkest three, nothing past the ceiling, equal ink
+  from every mark on a level.
+
+## 2026-08-27 — `peak` and `maxSize` become project settings
+
+- **Decision:** The two constants the ramp was built on — `coveragePeak = 1.05`
+  and `maxMarkSize = 1.6` — become `settings.peak` and `settings.maxSize`, and
+  `fitPeak` solves the first from the second across every band and every mark.
+  Presets carry their own `peak` and pin `maxSize` to 1.15.
+- **Alternatives:** Keep one global peak and let sparse sets clamp. Or derive
+  the peak automatically on every solve, with no stored value.
+- **Reason:** The peak is a property of the *set of marks*, not of taste: airy
+  letterpress cannot cover as much of a cell as a solid woodblock without
+  spilling out of it, and one global value either clogs the solid sets or leaves
+  the airy ones clamped flat across their top bands. Deriving it silently on
+  every solve would make changing one mark rescale the whole ramp with nothing
+  on screen to explain it.
+- **Consequences:** Two more sliders in the tone panel, and a `fit ramp` button
+  that is the only way most users will set `peak`. `fitPeak` has to check every
+  band, not only the darkest: fitting on the darkest alone leaves a sparse mark
+  in the middle of the ladder clamped, which is the exact failure the button
+  exists to prevent.
+
+## 2026-08-27 — Halftone is a second renderer, not another mark
+
+- **Decision:** `settings.mode` switches between the glyph path and a separate
+  `HalftoneRenderer` with its own settings block: ruling, angle, dot shape,
+  separation, gain, spread, black generation and frame width. It shares the tone
+  field with the glyph path and nothing else.
+- **Alternatives:** Ship a round mark and call a dense grid of it a halftone.
+- **Reason:** They are different principles. glyph art has cells and carries
+  tone in a mark's size; a halftone has a frame-independent lattice at its own
+  ruling and angle and carries tone in a dot's area, and its colour comes from
+  screening separate plates at angles 30° apart, not from tinting one ink. A
+  rosette cannot be produced by rotating a grid of marks. Forcing the two
+  through one renderer would mean a settings object where half the fields are
+  dead in either mode, which is how a tool starts lying about what it does.
+- **Consequences:** The bands, the ramp editor, the seed, `hand` and the cycling
+  controls are hidden in halftone mode, because none of them mean anything
+  there. The frame size comes from `sequenceSize` for both modes, so the preview
+  and the encoder cannot disagree.
+
 ## 2026-08-09 — glyph art solves mark size from ink coverage
 
 - **Decision:** A tone band stores a target *ink coverage*, not a size. Every

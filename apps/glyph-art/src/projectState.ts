@@ -9,29 +9,51 @@
  * the user actually made. A share link does not: six embedded bitmaps in a URL
  * fragment is not a link. Uploaded marks fall back to the shipped mark of the
  * same band, and the UI says so when it copies the link.
+ *
+ * Preset marks survive a share link, because they are a path and an id rather
+ * than a bitmap. That path is the reason `readGlyphs` checks preset ids against
+ * the shipped set instead of accepting the string: a project file is untrusted
+ * input, and a `source` it chose freely would be a path this app hands to an
+ * `<img>`. Matching against `presetGlyphIds` means only paths this build
+ * produced are ever loaded.
  */
 
 import {
   defaultBandCount,
   defaultSettings,
+  dotShapes,
+  halftoneWidths,
   markKinds,
   maxBands,
   maxExportFrames,
   maxFps,
+  maxGain,
   maxGrid,
   maxHold,
+  maxLines,
+  maxPeak,
+  maxSizeCeiling,
+  maxSpread,
   maxWeight,
   minBands,
   minFps,
+  minGain,
   minGrid,
   minHold,
+  minLines,
+  minPeak,
+  minSizeCeiling,
+  minSpread,
   minWeight,
+  separations,
   type Band,
   type GlyphSpec,
+  type HalftoneSettings,
   type Range,
   type Settings,
 } from "./types";
 import { defaultBandGlyphs, markDefinitions, markSpecs } from "./engine/marks";
+import { presetGlyphs, presetGlyphIds } from "./presets";
 import { initialSettings } from "./store";
 
 /** A hostile or accidental file should not be able to exhaust memory. */
@@ -59,6 +81,9 @@ function readGlyphs(value: unknown): GlyphSpec[] {
   const shipped = markSpecs();
   if (!Array.isArray(value)) return shipped;
 
+  // Preset paths come from the build, never from the file being read.
+  const presetSources = new Map(presetGlyphs().map((spec) => [spec.id, spec.source]));
+
   const seen = new Set<string>();
   const glyphs: GlyphSpec[] = [];
   for (const entry of value) {
@@ -69,14 +94,18 @@ function readGlyphs(value: unknown): GlyphSpec[] {
     if (!markKinds.includes(kind as GlyphSpec["kind"])) continue;
     if (source.length > maxGlyphSourceBytes) continue;
     if (seen.has(id)) continue;
-    // Only the two schemes the app itself produces; nothing that could fetch.
+    // Only the schemes the app itself produces; nothing that could fetch.
     if (kind === "file" && !source.startsWith("data:image/")) continue;
+    // A preset is a path this build hands to an `<img>`, so it is accepted by
+    // identity rather than by inspection: only ids this build generated pass,
+    // and the path is taken from the generated module, never from the file.
+    if (kind === "preset" && !presetGlyphIds.has(id)) continue;
     seen.add(id);
     glyphs.push({
       id,
       label: typeof label === "string" && label ? label.slice(0, 40) : id,
       kind: kind as GlyphSpec["kind"],
-      source,
+      source: kind === "preset" ? presetSources.get(id)! : source,
       ...(typeof font === "string" ? { font: font.slice(0, 16) } : {}),
     });
   }
@@ -107,6 +136,40 @@ function readBands(value: unknown, known: Set<string>): Band[] | null {
   return bands;
 }
 
+/** Six-digit hex only. Anything else is a string the CSS parser would guess at. */
+function readInk(value: unknown, fallback: string) {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+}
+
+function readHalftone(value: unknown): HalftoneSettings {
+  const fallback = defaultSettings.halftone;
+  if (!isObject(value)) return { ...fallback, inks: [...fallback.inks] };
+
+  const shape = dotShapes.includes(value.shape as HalftoneSettings["shape"])
+    ? (value.shape as HalftoneSettings["shape"])
+    : fallback.shape;
+  const separation = separations.includes(value.separation as HalftoneSettings["separation"])
+    ? (value.separation as HalftoneSettings["separation"])
+    : fallback.separation;
+  const inks = Array.isArray(value.inks) ? value.inks : [];
+
+  return {
+    lines: Math.round(number(value.lines, fallback.lines, minLines, maxLines)),
+    angle: number(value.angle, fallback.angle, 0, 90),
+    shape,
+    separation,
+    gain: number(value.gain, fallback.gain, minGain, maxGain),
+    spread: number(value.spread, fallback.spread, minSpread, maxSpread),
+    blackGeneration: number(value.blackGeneration, fallback.blackGeneration, 0, 1),
+    inks: [readInk(inks[0], fallback.inks[0]), readInk(inks[1], fallback.inks[1])],
+    // An arbitrary width would let a project file ask for a frame that cannot
+    // be allocated, so only the sizes the interface offers are accepted.
+    width: halftoneWidths.includes(value.width as number)
+      ? (value.width as number)
+      : fallback.width,
+  };
+}
+
 export function parseSettings(value: unknown): Settings {
   if (!isObject(value)) throw new Error("Project is not a JSON object.");
   const incoming = isObject(value.settings) ? value.settings : value;
@@ -115,6 +178,15 @@ export function parseSettings(value: unknown): Settings {
   settings.seed = number(incoming.seed, defaultSettings.seed, 0, 0xffff_ffff) >>> 0;
   settings.grid = Math.round(number(incoming.grid, defaultSettings.grid, minGrid, maxGrid));
   settings.weight = number(incoming.weight, defaultSettings.weight, minWeight, maxWeight);
+  settings.peak = number(incoming.peak, defaultSettings.peak, minPeak, maxPeak);
+  settings.maxSize = number(
+    incoming.maxSize,
+    defaultSettings.maxSize,
+    minSizeCeiling,
+    maxSizeCeiling,
+  );
+  settings.mode = incoming.mode === "halftone" ? "halftone" : "glyph";
+  settings.halftone = readHalftone(incoming.halftone);
   settings.hand = number(incoming.hand, defaultSettings.hand, 0, 1);
   settings.targetFps = Math.round(number(incoming.targetFps, defaultSettings.targetFps, minFps, maxFps));
   settings.stillFrames = Math.round(
@@ -148,7 +220,12 @@ export function parseSettings(value: unknown): Settings {
  * the same ramp shape rather than to nothing.
  */
 export function shareableSettings(settings: Settings): Settings {
-  const shipped = markSpecs();
+  // Presets stay: a preset mark is an id and a path, which is a handful of
+  // bytes, so a link to a preset ramp opens as the ramp it was shared as.
+  const shipped = [
+    ...markSpecs(),
+    ...settings.glyphs.filter((spec) => spec.kind === "preset"),
+  ];
   const shippedIds = new Set(shipped.map((spec) => spec.id));
   const fallbacks = defaultBandGlyphs(settings.bands.length);
 
@@ -182,5 +259,5 @@ export function decodeSettings(value: string) {
 
 /** Whether a share link would lose anything. Drives the copy notice. */
 export function hasCustomMarks(settings: Settings) {
-  return settings.glyphs.some((spec) => spec.kind !== "mark");
+  return settings.glyphs.some((spec) => spec.kind !== "mark" && spec.kind !== "preset");
 }

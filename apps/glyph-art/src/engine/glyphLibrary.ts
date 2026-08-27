@@ -16,6 +16,12 @@
  * Nothing is fetched. Files arrive as data URLs and SVG as markup, both loaded
  * through an `<img>`, which also renders any uploaded SVG inert and leaves its
  * external references blocked by `connect-src 'none'`.
+ *
+ * Shipped preset marks are the one thing that comes off the network, and they
+ * come off it as images: a relative path under the site's own base, loaded
+ * through the same `<img>` and covered by `img-src 'self'`. They are prepared
+ * so that this measurement returns exactly the density the build script
+ * measured — see `scripts/build-glyph-presets.mjs` and `tests/presets.test.ts`.
  */
 
 import { fontStacks, type GlyphSpec } from "../types";
@@ -72,7 +78,11 @@ async function rasterize(spec: GlyphSpec): Promise<HTMLCanvasElement> {
     return rasterizeText(spec);
   }
 
-  const source = spec.kind === "mark" ? svgUrl(spec.source) : spec.source;
+  const source = spec.kind === "mark"
+    ? svgUrl(spec.source)
+    : spec.kind === "preset"
+      ? `${import.meta.env.BASE_URL}${spec.source}`
+      : spec.source;
   const image = await loadImage(source);
   const naturalWidth = image.naturalWidth || raster;
   const naturalHeight = image.naturalHeight || raster;
