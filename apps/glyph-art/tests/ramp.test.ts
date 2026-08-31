@@ -83,6 +83,22 @@ describe("solving size from coverage", () => {
     expect(rawSize(0.5, 0.4, 1)).toBeGreaterThan(rawSize(0.5, 0.8, 1));
   });
 
+  it("shuts a wide mark out of the dark end, at equal density", () => {
+    // Why an elongated mark sorts onto the light levels on its own, with
+    // nothing in the solver looking at proportion to put it there: fitted by
+    // its long side, a mark two and a half times as wide as it is tall reaches
+    // only two fifths of the cell vertically, so at any given size it inks two
+    // fifths of what a square mark of the same density would. It therefore
+    // hits the size ceiling at a far lighter tone.
+    const density = 0.4;
+    const ceiling = 1.15;
+    const reach = (aspect: number) => cellCoverage(density, aspect) * ceiling ** 2;
+
+    expect(reach(2.5)).toBeCloseTo(reach(1) * 0.4, 6);
+    expect(reach(2.5)).toBeLessThan(reach(1));
+    expect(rawSize(0.2, density, 2.5)).toBeGreaterThan(rawSize(0.2, density, 1));
+  });
+
   it("keeps the shipped set climbing across every band", () => {
     expect(defaultSettings.peak).toBeCloseTo(1.05);
     const solved = solveRamp(sevenBands(), lookup);

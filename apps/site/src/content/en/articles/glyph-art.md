@@ -130,18 +130,25 @@ square sit on one ramp without any of them reading two bands off.
 
 ## Presets
 
-Four sets ship with the tool: **18th century**, **1812**, **Great War** and
-**1941**. Each is scanned type and marks of its period — letters, numerals,
-seals, ornaments — sorted onto twelve levels.
+Five sets ship with the tool: **18th century**, **1812**, **Great War**,
+**1941** and **1812 press**. Each is scanned type and marks of its period —
+letters, numerals, seals, ornaments — sorted onto twelve levels.
 
 Picking one changes the marks and the shape of their ramp, and nothing about the
 picture. The grid, the levels, the inversions and your source all stay where you
-put them, so you can flip between the four sets to compare them.
+put them, so you can flip between the sets to compare them.
 
 Every level prints at least two different marks, and the darkest three print at
-least four. A mark serves two or three levels at different sizes, which is where
-the variety comes from without a larger set of scans — so a level is a texture
-rather than one stamp repeated.
+least four. **1812 press** prints ten on every level and twelve on the darkest,
+because it has the material to. A mark serves two or three levels at different
+sizes, which is where the variety comes from without a larger set of scans — so
+a level is a texture rather than one stamp repeated.
+
+The marks on a level are chosen to be **as unlike each other as possible**, not
+simply the ones that print it best. That matters more than it sounds: every mark
+in a level prints, cycling from cell to cell, so a level filled from the top of
+a ranked list ends up as ten impressions of the same letter — ten marks by the
+count, one by eye.
 
 Which level a mark lands on is not a property of the mark. It is a property of
 the *size* the mark has to print at to hit that level's ink. A sparse letter
@@ -150,10 +157,30 @@ its cell; a solid woodblock is the reverse. Every scan is measured for its ink,
 its proportion and its stroke width, and each level takes the marks that land at
 a printable size with a stroke thick enough to survive the raster.
 
+The same arithmetic sorts wide marks onto the light end without anything looking
+at their proportion. A mark is fitted into its square cell by its long side, so
+one two and a half times as wide as it is tall reaches only two fifths of the
+cell the other way and inks two fifths of what its density suggests.
+
 Each set carries its own `max ink`, because that is a fact about the material:
 airy letterpress cannot cover as much of a cell as a solid woodblock without
-spilling out of it. **1812** is the lightest set for exactly that reason, and it
-will not print a true black. That is the type, not the tool.
+spilling out of it. **18th century** is the lightest set for exactly that reason
+and will not print a true black; **1812 press** is the heaviest, because a case
+of newspaper type contains genuinely solid sorts. That is the type, not the tool.
+
+### 1812 press
+
+The other four sets were picked mark by mark. This one was cut out of four whole
+newspaper pages of 1812 and 1813 — *Вѣстникъ Европы*, *Северная почта*, *Рускiй
+Инвалидъ*, *Сынъ Отечества* — automatically, and it is a different kind of set
+because of it: 125 marks drawn from a pool of nearly three thousand, so every
+level is deep and no two neighbouring cells at the same tone look alike.
+
+Nothing recognised those letters. A page with its background removed is ink on
+transparency, so a letter *is* a connected island of ink, and finding those
+islands is ordinary image morphology — about a tenth of a second per page. The
+tool never needs to know which letter a mark is, because it sizes marks by the
+ink it measures, not by their names.
 
 ## Marks
 

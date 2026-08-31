@@ -1,5 +1,83 @@
 # Architecture decisions
 
+## 2026-08-31 — Cut marks from whole pages by connected components
+
+- **Decision:** `scripts/harvest-glyphs.mjs` turns a background-removed page of
+  letterpress into candidate marks by labelling connected islands of alpha,
+  then filtering on size, proportion, fill, crispness and recurrence. It writes
+  marks in the same shape a hand-picked scan arrives in, so the preset builder
+  treats the two identically.
+- **Alternatives:** Run a vision model over the page to detect and classify
+  glyphs. Or keep picking marks by hand, which is what this replaces.
+- **Reason:** A cleaned letterpress page is ink on transparency, so a letter
+  *is* a connected island of alpha. Labelling those islands is 1970s
+  morphology: a tenth of a second for a ten-megapixel page, exactly
+  reproducible, no model and no cost. What a model would add is a *name* for
+  each island, and the tool never needs one — it sizes a mark by the ink it
+  measures, not by which letter it is. Recognition would be an expensive way to
+  produce a label nothing reads.
+- **Consequences:** Quality depends entirely on the background having been
+  removed first; that step stays manual and is the only one that matters. Four
+  pages yield 2839 candidates, so the builder now has to *choose* rather than
+  use everything it is given. Pages live in `assets/glyph-pages/`, gitignored
+  like every other original. `docs/harvesting-marks.md` is the walkthrough.
+
+## 2026-08-31 — Crispness separates type from stains
+
+- **Decision:** An island whose ink is less than a third at full strength is
+  rejected, measured as the share of inked pixels above alpha 191.
+- **Alternatives:** Filter on size, shape and fill only. Or clean the pages
+  harder before harvesting.
+- **Reason:** A page carries soft grey rubbish alongside its type — show-through
+  from the far side of the leaf, a thumbprint, the ghost of a fold, the halo
+  where a stain was cleaned away. These pass every test of size, shape and fill,
+  some being exactly letter-sized and letter-shaped, and they print as mud. What
+  separates them from type is not shape but edge: a letter pressed into paper is
+  bimodal, nearly all ink or nearly all paper with a pixel of transition, while
+  a stain is *all* transition. The threshold is not delicate — below 0.20 is
+  uniformly rubbish and above 0.33 uniformly type.
+- **Consequences:** It took `north.png` from 2431 islands to 626, because that
+  page had been cleaned in a way that left heavy ghosting. A page cleaned
+  differently will lose a different proportion, and that is the filter working
+  rather than a threshold needing adjustment.
+
+## 2026-08-31 — A level's marks are chosen to be unlike each other
+
+- **Decision:** After the first mark of a level — chosen on print quality,
+  because the ramp measures the level's size from it — every further mark is the
+  candidate furthest in shape from those already chosen, with print quality as a
+  weight. Shape distance is the RMS difference of a 12×12 thumbnail taken from
+  the mark's tight box.
+- **Alternatives:** Take the top N of the ranked list, which is what the first
+  version did, with a rule against two marks of the same proportion.
+- **Reason:** A pool is not a fallback list. Every mark in it prints, cycling
+  from cell to cell, so the pool size *is* how varied that level looks. Ranked
+  by print quality alone, a level of ten fills with ten impressions of the same
+  letter — technically ten marks, visibly one, and the whole reason for a pool
+  is lost. The proportion rule was an approximation of this that could not see
+  the difference between two different letters of the same width.
+- **Consequences:** The four hand-picked sets re-solved to slightly different
+  ladders, and a few of their marks are no longer used. Pool sizes became
+  per-set, since a set of fourteen scans cannot fill a level of ten and a case
+  of newspaper type can. Twelve is the hard ceiling, because
+  `projectState.readBands` slices a band there.
+
+## 2026-08-31 — Only marks a level names are written
+
+- **Decision:** The builder wipes each set's output directory and writes a WebP
+  only for marks that appear on some level.
+- **Alternatives:** Write every candidate and let the ramp reference a subset.
+- **Reason:** A harvested set offers thousands of candidates and a ramp uses a
+  hundred; shipping the rest is megabytes of marks nothing points at. It also
+  keeps `presetGlyphIds` — which is what makes a preset path safe to load from
+  an untrusted project file — an exact description of what is deployed.
+- **Consequences:** Rebuilding can retire a mark id. A project saved against an
+  older build that named a now-unused mark loses that mark; `readGlyphs` drops
+  preset ids this build does not ship, so it degrades to the rest of the band
+  rather than breaking. The asset budget also became two numbers — 160 KB for
+  any single set, which is what a visitor downloads, and 512 KB for the library,
+  which is what the repository carries.
+
 ## 2026-08-27 — Preset levels are solved from size, not authored per mark
 
 - **Decision:** Which of the twelve levels a scanned mark prints on is decided by

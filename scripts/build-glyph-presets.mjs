@@ -68,20 +68,38 @@ const CELL_PIXELS = 24;
 /** A stroke thinner than this at print size dissolves into grey. */
 const MIN_STROKE_PIXELS = 1.1;
 
-/** How many marks a level carries. The darkest levels carry the most. */
+/**
+ * How many marks a level carries, per set. The darkest levels carry the most.
+ *
+ * A pool is not a fallback list: every mark in it prints, cycling cell by cell,
+ * so the pool size *is* how varied that level looks. Bigger is better and the
+ * only limits are real ones — how much material the set has, and the twelve
+ * marks a band can hold in a saved project.
+ */
 const POOL = { normal: 2, dark: 4 };
 
 /** Levels from this index up count as the darkest. */
 const DARK_FROM = 9;
+
+/** A band in a saved project holds at most this many marks. See projectState. */
+const POOL_CAP = 12;
 
 /** No mark serves more than this many levels, or the set reads as one mark. */
 const MAX_REUSE = 3;
 
 const sets = [
   { id: "eighteenth-century", label: "18th century" },
-  { id: "eighteen-twelve", label: "1812" },
+  { id: "eighteen-twelve", label: "1812", pool: { normal: 4, dark: 6 } },
   { id: "great-war", label: "Great War" },
   { id: "nineteen-forty-one", label: "1941" },
+  {
+    id: "eighteen-twelve-press",
+    label: "1812 press",
+    // Cut whole out of four newspaper pages by scripts/harvest-glyphs.mjs, so
+    // the material is thousands of sorts rather than a few dozen: this is the
+    // set that can actually fill a level to the cap.
+    pool: { normal: 10, dark: 12 },
+  },
 ];
 
 /* ---------------------------------------------------------------- measuring */
@@ -163,7 +181,50 @@ async function measure(buffer) {
     density: sum / (boxWidth * boxHeight),
     aspect: boxWidth / boxHeight,
     stroke: strokeWidth(ink, width, height, Math.max(boxWidth, boxHeight)),
+    signature: signature(ink, width, { left, top, boxWidth, boxHeight }),
   };
+}
+
+/** Edge of the shape thumbnail used to tell two marks apart. */
+const SIGNATURE = 12;
+
+/**
+ * A coarse thumbnail of the mark, stretched from its tight box to a square.
+ *
+ * Proportion is normalised out on purpose: it is measured separately and it is
+ * already part of the size solve, so leaving it in would make a level count a
+ * narrow and a wide impression of the same letter as two different marks.
+ */
+function signature(ink, width, box) {
+  const thumb = new Float32Array(SIGNATURE * SIGNATURE);
+  for (let cellY = 0; cellY < SIGNATURE; cellY += 1) {
+    const top = box.top + Math.floor((cellY * box.boxHeight) / SIGNATURE);
+    const bottom = Math.max(top + 1, box.top + Math.floor(((cellY + 1) * box.boxHeight) / SIGNATURE));
+    for (let cellX = 0; cellX < SIGNATURE; cellX += 1) {
+      const left = box.left + Math.floor((cellX * box.boxWidth) / SIGNATURE);
+      const right = Math.max(left + 1, box.left + Math.floor(((cellX + 1) * box.boxWidth) / SIGNATURE));
+      let total = 0;
+      let samples = 0;
+      for (let y = top; y < bottom; y += 1) {
+        for (let x = left; x < right; x += 1) {
+          total += ink[y * width + x];
+          samples += 1;
+        }
+      }
+      thumb[cellY * SIGNATURE + cellX] = total / (samples || 1);
+    }
+  }
+  return thumb;
+}
+
+/** RMS difference between two thumbnails: 0 is the same mark twice. */
+function unlike(a, b) {
+  let total = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    const delta = a[index] - b[index];
+    total += delta * delta;
+  }
+  return Math.sqrt(total / a.length);
 }
 
 /** Median stroke width, as a fraction of the mark's long side. */
@@ -228,9 +289,9 @@ const bandCenter = (index) => (index + 0.5) / LEVELS;
  * its own peak: airy letterpress simply does not reach the ink a solid
  * woodblock does, and pretending otherwise would flatten the top of the ramp.
  */
-function solvePeak(marks) {
+function solvePeak(marks, pool) {
   const coverages = marks.map(cellCoverage).sort((a, b) => b - a);
-  const anchor = coverages[Math.min(POOL.dark, coverages.length) - 1];
+  const anchor = coverages[Math.min(pool.dark, coverages.length) - 1];
   const headroom = (MAX_SIZE - 0.05) ** 2;
   return (anchor * headroom) / bandCenter(LEVELS - 1) ** WEIGHT;
 }
@@ -276,17 +337,26 @@ function score(mark, coverage) {
  * almost anything serves a light level. Filling the loose end first would take
  * those marks and leave the dark end unfillable.
  *
- * Each level's first mark is the one the ramp solver measures the level's size
- * from, so it is the best-scoring one; the rest correct against it.
+ * Within a level the marks are chosen to be **as unlike each other as
+ * possible**, not simply the best-scoring ones. That is the whole point of a
+ * pool: every mark in it prints, cycling from cell to cell, so a level built
+ * from the top of a ranked list ends up as ten impressions of the same letter —
+ * technically ten marks, visibly one. Each pick after the first is therefore
+ * the candidate that is furthest in shape from everything already on the level,
+ * with how well it prints there as a weight rather than as the sole criterion.
+ *
+ * The first mark is the exception and is chosen on score alone, because the
+ * ramp solver measures the level's size from it. It has to be the mark that
+ * prints that level best.
  */
-function assignLevels(marks, peak) {
+function assignLevels(marks, peak, pool) {
   const uses = new Map(marks.map((mark) => [mark.id, 0]));
   const levels = Array.from({ length: LEVELS }, () => []);
   const order = [...Array(LEVELS).keys()].reverse();
 
   for (const level of order) {
     const coverage = coverageFor(bandCenter(level), peak);
-    const want = level >= DARK_FROM ? POOL.dark : POOL.normal;
+    const want = Math.min(POOL_CAP, level >= DARK_FROM ? pool.dark : pool.normal);
 
     const ranked = marks
       .map((mark) => ({ mark, value: score(mark, coverage) }))
@@ -300,21 +370,41 @@ function assignLevels(marks, peak) {
       .sort((a, b) => b.value - a.value);
 
     const chosen = [];
-    for (const entry of ranked) {
-      if (chosen.length >= want) break;
-      if (uses.get(entry.mark.id) >= MAX_REUSE) continue;
-      // Two marks of the same proportion at the same size read as one mark
-      // printed twice, which is the opposite of what a pool is for.
-      const twin = chosen.some((picked) => Math.abs(
-        Math.log(picked.aspect / entry.mark.aspect),
-      ) < 0.12);
-      if (twin && chosen.length > 0) continue;
+    const take = (entry) => {
       chosen.push(entry.mark);
+      entry.taken = true;
+    };
+
+    const eligible = ranked.filter((entry) => uses.get(entry.mark.id) < MAX_REUSE);
+    if (eligible.length > 0) take(eligible[0]);
+
+    const best = eligible[0]?.value ?? 1;
+    while (chosen.length < want) {
+      let pick = null;
+      let pickScore = -Infinity;
+      for (const entry of eligible) {
+        if (entry.taken) continue;
+        let nearest = Infinity;
+        for (const picked of chosen) {
+          const distance = unlike(entry.mark.signature, picked.signature);
+          if (distance < nearest) nearest = distance;
+        }
+        // Distance decides; the print score only breaks ties between marks
+        // that are equally unlike what is already there.
+        const quality = best > 0 ? Math.max(0, entry.value) / best : 1;
+        const value = nearest * (0.55 + 0.45 * quality);
+        if (value > pickScore) {
+          pickScore = value;
+          pick = entry;
+        }
+      }
+      if (!pick) break;
+      take(pick);
     }
 
-    // The reuse cap and the proportion rule are preferences, not promises. A
-    // level that cannot be filled under them is filled without them rather
-    // than left short of the count the set guarantees.
+    // The reuse cap is a preference, not a promise. A level that cannot be
+    // filled under it is filled without it rather than left short of the count
+    // the set guarantees.
     for (const entry of ranked) {
       if (chosen.length >= want) break;
       if (chosen.includes(entry.mark)) continue;
@@ -331,6 +421,7 @@ function assignLevels(marks, peak) {
 /* ------------------------------------------------------------------ writing */
 
 async function buildSet(set) {
+  const pool = set.pool ?? POOL;
   const sourceDirectory = path.join(sourceRoot, set.id);
   const entries = (await readdir(sourceDirectory, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && /\.(png|jpe?g|webp|tiff?)$/i.test(entry.name))
@@ -338,9 +429,13 @@ async function buildSet(set) {
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
 
   const outputDirectory = path.join(assetRoot, set.id);
+  // Not additive: a mark dropped from the source, or dropped by the solve,
+  // has to disappear from the deployed set too, or the budget grows with
+  // every rebuild and `presetGlyphIds` starts naming files nothing points at.
+  await rm(outputDirectory, { recursive: true, force: true });
   await mkdir(outputDirectory, { recursive: true });
 
-  const marks = [];
+  const candidates = [];
   const skipped = [];
 
   for (const name of entries) {
@@ -355,20 +450,30 @@ async function buildSet(set) {
       continue;
     }
 
-    const file = `${slug}.webp`;
-    await sharp(buffer).webp({ lossless: true, effort: 6 }).toFile(path.join(outputDirectory, file));
-    marks.push({
+    candidates.push({
       id: `preset-${set.id}-${slug}`,
       label: `${set.label} ${slug}`,
-      source: `presets/${set.id}/${file}`,
+      source: `presets/${set.id}/${slug}.webp`,
       buffer,
       ...metrics,
     });
   }
 
-  const peak = solvePeak(marks);
-  const levels = assignLevels(marks, peak);
-  return { ...set, peak, marks, levels, skipped };
+  const peak = solvePeak(candidates, pool);
+  const levels = assignLevels(candidates, peak, pool);
+
+  // Only what actually prints is written. A harvested set offers thousands of
+  // candidates and a ramp uses a hundred of them; shipping the rest would be
+  // several megabytes of marks no band names.
+  const used = new Set(levels.flat().map((mark) => mark.id));
+  const marks = candidates.filter((mark) => used.has(mark.id));
+  for (const mark of marks) {
+    await sharp(mark.buffer)
+      .webp({ lossless: true, effort: 6 })
+      .toFile(path.join(root, "apps/glyph-art/public", mark.source));
+  }
+
+  return { ...set, pool, peak, marks, levels, skipped, candidates: candidates.length };
 }
 
 function serialize(built) {
@@ -521,7 +626,6 @@ async function proofSheet(set, directory) {
 }
 
 async function main() {
-  await rm(assetRoot, { recursive: true, force: true });
   const built = [];
   for (const set of sets) built.push(await buildSet(set));
   await writeFile(modulePath, serialize(built), "utf8");
@@ -536,8 +640,9 @@ async function main() {
     );
     const pools = set.levels.map((level) => level.length);
     console.log(
-      `${set.label.padEnd(14)} ${String(set.marks.length).padStart(2)} marks`
-      + `${set.skipped.length ? ` (${set.skipped.length} blank, skipped)` : ""}`
+      `${set.label.padEnd(14)} ${String(set.marks.length).padStart(3)} of `
+      + `${String(set.candidates).padStart(4)} candidates`
+      + `${set.skipped.length ? `, ${set.skipped.length} blank` : ""}`
       + `  peak ${(set.peak * 100).toFixed(0)}%`
       + `\n  sizes ${sizes.map((size) => String(Math.round(size * 100)).padStart(3)).join(" ")}`
       + `\n  pool  ${pools.map((count) => String(count).padStart(3)).join(" ")}`,

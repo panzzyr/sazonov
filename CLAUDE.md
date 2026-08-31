@@ -31,6 +31,7 @@ pnpm --filter @sazonov/printor exec vitest run -t "deterministic"
 pnpm --filter @sazonov/printor lint              # generates textures, then tsc --noEmit
 node --test tests/site.test.mjs                  # single site test file (needs a site build)
 pnpm build:drafts                                # site build including draft: true content
+node scripts/harvest-glyphs.mjs <set> <page.png>  # cut a scanned page into candidate marks
 node scripts/build-glyph-presets.mjs             # rebuild the preset marks (needs assets/)
 node scripts/build-glyph-presets.mjs --sheet out # ...and print a proof sheet of every ladder
 SITE_URL=https://preview.example.com pnpm build  # override production origin
@@ -46,7 +47,9 @@ These fail the build, not just a lint warning:
 - `apps/printor/scripts/budget.mjs` and `apps/glyph-art/scripts/budget.mjs` — each
   tool's `dist/assets/*.{js,css}` must stay under 300 KB gzip, and its
   `dist/index.html` must still contain `connect-src 'none'`. glyph art's also
-  caps `dist/presets/` at 256 KB across every preset mark.
+  caps `dist/presets/` at **160 KB per set** — a set is fetched only when it is
+  picked, so that is what a visitor downloads — and **512 KB in total**, which is
+  what the repository carries.
 - `tests/privacy.test.ts` in **both** tools — `public/_headers` and `index.html`
   must keep `connect-src 'none'`, and no file under `src/` may contain
   `fetch`/`XMLHttpRequest`/`WebSocket`/`sendBeacon`/`EventSource` or
@@ -105,6 +108,7 @@ attribute means changing all of them.
 | `apps/printor/src/generatedTextures.ts` | `apps/printor/scripts/generate-texture-library.mjs` | `apps/printor/public/textures/manifest.json` |
 | `apps/glyph-art/src/generatedPresets.ts` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` (scans, not in git) |
 | `apps/glyph-art/public/presets/` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` |
+| `assets/glyph-presets/eighteen-twelve-press/` | `scripts/harvest-glyphs.mjs` | `assets/glyph-pages/` (scanned pages, not in git) |
 | `apps/printor/public/textures/` | `scripts/build-texture-library.mjs` | `assets/` (full-resolution scans, not in git) |
 | `apps/site/_site/` | `eleventy` + `scripts/postbuild.mjs` | site sources |
 | `apps/printor/dist/` | `vite build` + `apps/printor/scripts/postbuild.mjs` | printor sources |
@@ -121,6 +125,14 @@ mark — black ink on white paper, whatever polarity the scan arrived in — and
 re-solves the twelve-level ladder, so **adding one scan can move every level**.
 `--sheet <dir>` renders each ladder as real blocks of stamped cells; look at
 those before committing, because no table shows whether a ladder steps.
+
+`harvest-glyphs.mjs` runs *before* it, and only for sets cut out of whole pages.
+It labels connected islands of alpha on a background-removed scan and writes each
+one as a candidate mark, in the same shape a hand-picked scan arrives in — so the
+builder cannot tell the difference. A page yields hundreds to thousands of
+candidates and a ladder uses about a hundred; the builder chooses, and writes a
+WebP only for the marks a level names. **`docs/harvesting-marks.md` is the full
+walkthrough** — read it before touching either script.
 
 ## printor architecture
 
@@ -250,17 +262,31 @@ darkest band asks for and `maxSize` is how far a mark may spill past its cell
 darkest band alone leaves a sparse mark mid-ladder clamped, which is the failure
 `fit ramp` exists to prevent.
 
-**Presets are generated.** `generatedPresets.ts` carries four sets of scanned
+**Presets are generated.** `generatedPresets.ts` carries five sets of scanned
 period marks and the twelve-level ladder solved for each, plus the ink density
-and proportion measured at build time. Those numbers are for tests and
-documentation only — the browser re-measures every mark on load and *that* is
-what the renderer uses; the two agree to a fraction of a percent, not exactly,
-because the browser re-rasterizes to 256 px first. `src/presets.ts` is the
-hand-written part: applying a preset changes the marks, the band count, `peak`
-and `maxSize`, and deliberately nothing about the picture. `projectState.ts`
-accepts a preset mark by **id membership** in `presetGlyphIds` and takes its
-path from this build, never from the file — a project file is untrusted input
-and that path goes straight into an `<img>`.
+and proportion measured at build time. Four are hand-picked; `1812 press` is cut
+whole out of four newspaper pages by `harvest-glyphs.mjs`, which is why it is
+the only set deep enough to fill a level to the twelve-mark cap. Those measured
+numbers are for tests and documentation only — the browser re-measures every
+mark on load and *that* is what the renderer uses; the two agree to a fraction
+of a percent, not exactly, because the browser re-rasterizes to 256 px first.
+
+`src/presets.ts` is the hand-written part: applying a preset changes the marks,
+the band count, `peak` and `maxSize`, and deliberately nothing about the
+picture. `projectState.ts` accepts a preset mark by **id membership** in
+`presetGlyphIds` and takes its path from this build, never from the file — a
+project file is untrusted input and that path goes straight into an `<img>`.
+Since the builder writes only the marks a level names, rebuilding can retire an
+id; a project that named it loses that mark and keeps the rest of its band.
+
+**A level's marks are chosen to be unlike each other**, not to be the
+best-scoring ones. Every mark in a pool prints, cycling cell by cell, so the
+pool size *is* how varied that level looks; ranked on quality alone a level of
+ten fills with ten impressions of the same letter. The first mark of each level
+is still the best-scoring one, because the ramp measures the level's size from
+it. Pool sizes are per set — a set of fourteen scans cannot fill a level of ten
+— and twelve is a hard ceiling, because `projectState.readBands` slices a band
+there and a thirteenth mark would vanish on save.
 
 **The preview is the export.** The raster is `grid × cellPixels(grid)`, derived
 from the grid rather than the source, so there is no proxy and none of printor's

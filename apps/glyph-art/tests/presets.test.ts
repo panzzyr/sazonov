@@ -16,12 +16,13 @@ function metricsFor(preset: (typeof presets)[number]) {
 }
 
 describe("what a preset ships", () => {
-  it("ships four sets", () => {
+  it("ships the five sets, in ramp order", () => {
     expect(presets.map((preset) => preset.id)).toEqual([
       "eighteenth-century",
       "eighteen-twelve",
       "great-war",
       "nineteen-forty-one",
+      "eighteen-twelve-press",
     ]);
   });
 
@@ -39,6 +40,35 @@ describe("what a preset ships", () => {
   it.each(presets)("$label puts at least four on each of the darkest three", (preset) => {
     for (const level of preset.levels.slice(-3)) {
       expect(new Set(level).size).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it.each(presets)("$label keeps every level inside what a saved band can hold", (preset) => {
+    // `projectState.readBands` slices a band at twelve marks. A level past that
+    // would print in full from the preset button and lose marks the moment the
+    // project was saved and reopened — the same picture, quietly less varied.
+    for (const level of preset.levels) expect(level.length).toBeLessThanOrEqual(12);
+  });
+
+  it("fills the harvested set's levels to the cap, which is why it exists", () => {
+    const press = presets.find((preset) => preset.id === "eighteen-twelve-press")!;
+    for (const level of press.levels) {
+      expect(new Set(level).size).toBeGreaterThanOrEqual(10);
+    }
+    expect(press.levels.slice(-3).every((level) => new Set(level).size === 12)).toBe(true);
+  });
+
+  it.each(presets)("$label makes every level's marks visibly different", (preset) => {
+    // A pool exists so a level looks varied; ten impressions of one letter
+    // would satisfy the count and defeat the purpose. Proportion is the cheap
+    // half of that check the data can carry — two marks of the same shape and
+    // the same proportion are the same mark twice.
+    for (const level of preset.levels) {
+      const shapes = level.map((id) => {
+        const { density, aspect } = preset.metrics[id];
+        return `${Math.round(aspect * 8)}|${Math.round(density * 8)}`;
+      });
+      expect(new Set(shapes).size).toBeGreaterThan(Math.min(2, level.length - 1));
     }
   });
 
@@ -122,9 +152,30 @@ describe("the ramp a preset solves to", () => {
   });
 
   it("gives an airier set a lower peak than a solid one", () => {
-    const light = presets.find((preset) => preset.id === "eighteen-twelve")!;
-    const heavy = presets.find((preset) => preset.id === "nineteen-forty-one")!;
+    const light = presets.find((preset) => preset.id === "eighteenth-century")!;
+    const heavy = presets.find((preset) => preset.id === "eighteen-twelve-press")!;
     expect(light.peak).toBeLessThan(heavy.peak);
+  });
+
+  it("sorts wide marks onto the light end of the harvested set", () => {
+    // A mark is fitted into its square cell by its long side, so a wide one
+    // reaches only part of the cell the other way and inks proportionally less.
+    // Nothing sorts for this — it falls out of the size solve — and on a set
+    // cut from newspaper pages, where the levels are ten marks deep and the
+    // proportions run from square to two-and-a-half to one, it is plain in the
+    // data. The hand-picked sets are too small a sample to show it; the
+    // mechanism itself is asserted in `ramp.test.ts`.
+    const press = presets.find((preset) => preset.id === "eighteen-twelve-press")!;
+    const elongation = press.levels.map((level) => {
+      const ratios = level.map((id) => {
+        const { aspect } = press.metrics[id];
+        return Math.max(aspect, 1 / aspect);
+      });
+      return ratios.reduce((sum, ratio) => sum + ratio, 0) / ratios.length;
+    });
+    const lightest = elongation.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+    const darkest = elongation.slice(-3).reduce((a, b) => a + b, 0) / 3;
+    expect(lightest).toBeGreaterThan(darkest * 1.2);
   });
 });
 
