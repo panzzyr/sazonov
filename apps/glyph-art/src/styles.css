@@ -226,6 +226,21 @@ input[type="range"] {
 
 /* Four sets never fit on one row at this width, and a wrapping toggle-row
    loses the joined-segment look. Two by two keeps the labels readable. */
+/* Sits over the canvas rather than beside it: the thing that looks broken
+   while a large preset loads is the picture, so that is where the answer goes. */
+.stage-loading {
+  position: absolute;
+  bottom: .8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: .3rem .6rem;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font: var(--step--2)/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
 .preset-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -341,6 +356,7 @@ button.primary {
  * reflows while you drag the cells slider is nausea, not feedback.
  */
 .canvas-stage {
+  position: relative;
   display: grid;
   min-height: 0;
   flex: 1;

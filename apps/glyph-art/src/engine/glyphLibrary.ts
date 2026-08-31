@@ -32,6 +32,12 @@ const raster = 256;
 /** Below this an anti-aliased fringe would count as ink and inflate the box. */
 const inkFloor = 0.02;
 
+/**
+ * Marks decoded at once. High enough that a large preset arrives in seconds,
+ * low enough not to open a hundred connections at a stroke.
+ */
+const concurrency = 8;
+
 export type MeasuredGlyph = {
   spec: GlyphSpec;
   /** Ink fraction of the tight box, 0..1. */
@@ -221,8 +227,20 @@ export class GlyphLibrary {
     return entry ? { density: entry.density, aspect: entry.aspect } : undefined;
   };
 
-  /** Loads anything new or changed, and forgets marks no longer in the set. */
-  async ensure(specs: GlyphSpec[]) {
+  /**
+   * Loads anything new or changed, and forgets marks no longer in the set.
+   *
+   * Loading runs several marks at a time. That is not a micro-optimisation: a
+   * preset cut from newspaper pages carries a hundred and twenty-five marks,
+   * each a separate request, and loading them one after another means a
+   * hundred and twenty-five round trips end to end. On a real connection that
+   * is half a minute of a blank ramp — the tool looks broken rather than busy.
+   * A handful in flight at once turns the same work into a few seconds.
+   *
+   * The measuring stays on the main thread and stays in one place, so the
+   * order marks finish in cannot change what any of them measures.
+   */
+  async ensure(specs: GlyphSpec[], onProgress?: (loaded: number, total: number) => void) {
     const wanted = new Set(specs.map((spec) => spec.id));
     for (const id of [...this.entries.keys()]) {
       if (!wanted.has(id)) {
@@ -231,13 +249,30 @@ export class GlyphLibrary {
       }
     }
 
-    for (const spec of specs) {
-      const signature = `${spec.kind}:${spec.font ?? ""}:${spec.source}`;
-      if (this.signatures.get(spec.id) === signature) continue;
-      const measured = measure(await rasterize(spec));
-      this.entries.set(spec.id, { spec, ...measured });
-      this.signatures.set(spec.id, signature);
-    }
+    const pending = specs
+      .map((spec) => ({ spec, signature: `${spec.kind}:${spec.font ?? ""}:${spec.source}` }))
+      .filter(({ spec, signature }) => this.signatures.get(spec.id) !== signature);
+    if (pending.length === 0) return;
+
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      for (;;) {
+        const index = next;
+        next += 1;
+        if (index >= pending.length) return;
+        const { spec, signature } = pending[index];
+        const measured = measure(await rasterize(spec));
+        this.entries.set(spec.id, { spec, ...measured });
+        this.signatures.set(spec.id, signature);
+        done += 1;
+        onProgress?.(done, pending.length);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, pending.length) }, worker),
+    );
   }
 }
 

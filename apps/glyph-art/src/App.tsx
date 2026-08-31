@@ -146,6 +146,7 @@ export function App() {
   const [markText, setMarkText] = useState("");
   const [markFont, setMarkFont] = useState(fontStacks[0].id);
   const [libraryVersion, setLibraryVersion] = useState(0);
+  const [loadingMarks, setLoadingMarks] = useState<{ done: number; total: number } | null>(null);
   const [separationPlates, setSeparationPlates] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -171,15 +172,26 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    library.ensure(glyphsRef.current)
+    // A preset cut from newspaper pages is a hundred and twenty-five marks and
+    // takes a few seconds on a cold cache. Without this the ramp and the canvas
+    // simply sit empty, and the tool reads as broken rather than as busy.
+    library
+      .ensure(glyphsRef.current, (done, total) => {
+        if (!cancelled && total > 8) setLoadingMarks({ done, total });
+      })
       .then(() => {
-        if (!cancelled) setLibraryVersion((version) => version + 1);
+        if (cancelled) return;
+        setLoadingMarks(null);
+        setLibraryVersion((version) => version + 1);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setMessage(error instanceof Error ? error.message : "A mark could not be read.");
+        if (cancelled) return;
+        setLoadingMarks(null);
+        setMessage(error instanceof Error ? error.message : "A mark could not be read.");
       });
     return () => {
       cancelled = true;
+      setLoadingMarks(null);
     };
   }, [glyphSignature, library]);
 
@@ -868,6 +880,11 @@ export function App() {
             {/* Kept mounted so the renderer's canvas reference never changes. */}
             <canvas ref={canvasRef} className="output" hidden={!media || peek} />
             {!media && <p className="stage-empty">Drop an image or a video anywhere here.</p>}
+            {loadingMarks && (
+              <p className="stage-loading" role="status">
+                loading marks {loadingMarks.done}/{loadingMarks.total}
+              </p>
+            )}
           </div>
 
           <div className="transport">
