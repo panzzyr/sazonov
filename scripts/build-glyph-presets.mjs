@@ -391,8 +391,15 @@ function assignLevels(marks, peak, pool) {
         }
         // Distance decides; the print score only breaks ties between marks
         // that are equally unlike what is already there.
+        //
+        // A mark nothing has used yet gets a thumb on the scale. Every scan in
+        // a hand-picked set was chosen deliberately, and a set where three of
+        // them never print is a set quietly ignoring its own material. The
+        // nudge is small enough that it only decides between candidates the
+        // distance had already left close together.
         const quality = best > 0 ? Math.max(0, entry.value) / best : 1;
-        const value = nearest * (0.55 + 0.45 * quality);
+        const unused = uses.get(entry.mark.id) === 0 ? 1.2 : 1;
+        const value = nearest * (0.55 + 0.45 * quality) * unused;
         if (value > pickScore) {
           pickScore = value;
           pick = entry;

@@ -194,18 +194,37 @@ with print quality as a weight rather than as the criterion:
 value = (distance to the nearest mark already chosen) × (0.55 + 0.45 × quality)
 ```
 
-A mark serves at most three levels, at different sizes, which is where variety
-comes from without a larger set of scans.
+A mark nothing has used yet gets a small thumb on the scale — 1.2× on the
+distance — so a hand-picked set does not leave its own scans unprinted. It is
+small enough to decide only between candidates the distance had already left
+close together.
+
+A mark serves at most three levels at different sizes, which is where a *small*
+set's variety comes from. A set cut from whole pages has more material than the
+ramp has places, so it never repeats a mark at all: 126 marks in 126 places.
 
 ### Pool sizes are per set
 
 | set | marks used | per level | darkest three | peak ink |
 | --- | --- | --- | --- | --- |
 | 18th century | 21 of 24 | 2 | 4 | 44% |
-| 1812 | 34 of 41 | 4 | 6 | 46% |
+| 1812 | 38 of 41 | 4 | 6 | 46% |
 | Great War | 14 of 14 | 2 | 4 | 54% |
 | 1941 | 17 of 17 | 2 | 4 | 63% |
-| **1812 press** | **125 of 2839** | **10** | **12** | **70%** |
+| **1812 press** | **126 of 2839** | **10** | **12** | **70%** |
+
+A set not using every one of its scans is the diversity rule working, not
+material being ignored. The three that 18th century leaves out sit 0.27–0.31
+away in shape from their nearest used sibling, where the *closest* pair among
+the marks it does use is 0.257 apart and the median pair is 0.455: they are the
+most redundant scans in the set, and printing them would put two near-identical
+marks in one pool.
+
+Raising a set's pool is not free, and the cost is tone. `solvePeak` anchors the
+whole ramp on the *n*-th densest mark, where *n* is the darkest pool size,
+because all *n* of them have to fit inside the cell. Taking 18th century from
+2/4 to 3/5 does use all 24 of its scans — and drops its peak ink from 44% to
+38%, because the fifth-densest mark cannot cover as much as the fourth.
 
 Twelve is a hard ceiling, not a taste: `projectState.readBands` slices a band at
 twelve marks, so a thirteenth would print from the preset button and vanish the

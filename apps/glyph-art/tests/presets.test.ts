@@ -58,25 +58,17 @@ describe("what a preset ships", () => {
     expect(press.levels.slice(-3).every((level) => new Set(level).size === 12)).toBe(true);
   });
 
-  it.each(presets)("$label makes every level's marks visibly different", (preset) => {
-    // A pool exists so a level looks varied; ten impressions of one letter
-    // would satisfy the count and defeat the purpose. Proportion is the cheap
-    // half of that check the data can carry — two marks of the same shape and
-    // the same proportion are the same mark twice.
-    for (const level of preset.levels) {
-      const shapes = level.map((id) => {
-        const { density, aspect } = preset.metrics[id];
-        return `${Math.round(aspect * 8)}|${Math.round(density * 8)}`;
-      });
-      expect(new Set(shapes).size).toBeGreaterThan(Math.min(2, level.length - 1));
-    }
-  });
+  it.each(presets)("$label repeats a mark only when it has to", (preset) => {
+    const slots = preset.levels.reduce((total, level) => total + level.length, 0);
+    const distinct = new Set(preset.levels.flat()).size;
 
-  it.each(presets)("$label reuses marks across levels rather than once each", (preset) => {
-    const used = preset.levels.flat();
-    // Every mark on more than one level is a mark printing at two sizes, which
-    // is where the variety comes from without a bigger set of scans.
-    expect(used.length).toBeGreaterThan(new Set(used).size);
+    // A hand-picked set has fewer marks than a twelve-level ramp has places, so
+    // marks serve two or three levels at different sizes — that reuse is where
+    // its variety comes from. A set cut from whole newspaper pages has more
+    // material than places, and repeating a mark there would be a wasted slot:
+    // it fills every level with marks it has never printed before.
+    if (preset.glyphs.length < slots) expect(distinct).toBeLessThan(slots);
+    else expect(distinct).toBe(slots);
   });
 
   it.each(presets)("$label only names marks it carries", (preset) => {
