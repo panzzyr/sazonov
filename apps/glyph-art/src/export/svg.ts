@@ -1,10 +1,38 @@
-import { glyphPlacements, outputSize, type RenderOptions } from "../engine/render";
+/**
+ * Vector export.
+ *
+ * Both modes end up here, and they arrive as different kinds of drawing.
+ *
+ * A glyph frame is *traced*: its marks are bitmaps — scans, type, uploaded
+ * files — measured into alpha masks, and the honest vector of a scan is its
+ * contour. A halftone frame is not traced at all, because it was never a
+ * bitmap: the dots are solved from area as circles, ellipses and polygons, so
+ * the SVG can carry the same geometry the canvas filled, exactly.
+ *
+ * That is why the halftone path shares `engine/halftone`'s dot sink rather
+ * than tracing the rendered canvas. A traced screen would be a picture of a
+ * halftone at one resolution; this is the screen itself, and it stays crisp at
+ * any size a press asks for.
+ */
+
+import { glyphPlacements, type RenderOptions } from "../engine/render";
 import { solveRamp } from "../engine/ramp";
+import {
+  dotOutline,
+  plateColors,
+  plateNames,
+  screenAngles,
+  screenDots,
+  screenPitch,
+  type DotSink,
+} from "../engine/halftone";
+import type { Settings } from "../types";
+import type { ToneField } from "../engine/tone";
 
 const traceThreshold = 32;
 
-function decimal(value: number) {
-  return Number(value.toFixed(3)).toString();
+function decimal(value: number, digits = 3) {
+  return Number(value.toFixed(digits)).toString();
 }
 
 function xml(value: string) {
@@ -70,15 +98,36 @@ function rgb(red: number, green: number, blue: number, invert: boolean) {
     : `rgb(${red} ${green} ${blue})`;
 }
 
-/** A traced, editable SVG of the currently visible glyph frame. */
-export function exportSvg(options: Omit<RenderOptions, "ink">, title: string) {
-  if (options.settings.mode !== "glyph") {
-    throw new Error("Traced SVG is available in glyph mode.");
-  }
+type Frame = { width: number; height: number };
 
-  const { settings, field, library } = options;
+export type SvgOptions = Omit<RenderOptions, "ink"> & {
+  /**
+   * The frame, from `sequenceSize`.
+   *
+   * Passed in rather than re-derived here for the same reason the halftone
+   * renderer takes it: one place decides the size, so the vector frame and the
+   * raster frame cannot disagree by a rounded pixel.
+   */
+  size: Frame;
+};
+
+/** Wraps a body in the document every mode shares. */
+function svgDocument(size: Frame, title: string, description: string, body: string) {
+  return [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" viewBox="0 0 ${size.width} ${size.height}">`,
+    `<title>${xml(title)}</title>`,
+    `<desc>${xml(description)}</desc>`,
+    body,
+    `</svg>`,
+  ].join("");
+}
+
+/** The traced glyph frame: one symbol per mark, placed by the renderer's own geometry. */
+function glyphBody(options: SvgOptions) {
+  const { settings, field, library, size } = options;
   const ramp = options.ramp ?? solveRamp(settings, library.metrics);
-  const { width, height, cell } = outputSize(settings, field);
+  const cell = size.width / field.gridW;
   const placements = [...glyphPlacements({ ...options, ink: "flat", ramp }, ramp, cell)];
   const used = [...new Set(placements.map((placement) => placement.glyph.spec.id))];
   const symbolIds = new Map(used.map((id, index) => [id, `mark-${index}`]));
@@ -101,7 +150,7 @@ export function exportSvg(options: Omit<RenderOptions, "ink">, title: string) {
 
   const ink = settings.invert ? "#ffffff" : "#000000";
   const paper = settings.invert ? "#000000" : "#ffffff";
-  let colour = `<rect width="${width}" height="${height}" fill="${ink}"/>`;
+  let colour = `<rect width="${size.width}" height="${size.height}" fill="${ink}"/>`;
   if (settings.colorMode === "source") {
     const cells: string[] = [];
     for (let index = 0; index < field.gridW * field.gridH; index += 1) {
@@ -113,16 +162,123 @@ export function exportSvg(options: Omit<RenderOptions, "ink">, title: string) {
     colour = cells.join("");
   }
 
-  const document = [
-    `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    `<title>${xml(title)}</title>`,
-    `<desc>Generated locally by glyph art. Mark masks were traced into vector paths.</desc>`,
-    `<defs>${symbols}<mask id="marks" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><g fill="#fff">${marks}</g></mask></defs>`,
-    `<rect width="${width}" height="${height}" fill="${paper}"/>`,
+  return [
+    `<defs>${symbols}<mask id="marks" maskUnits="userSpaceOnUse" x="0" y="0" width="${size.width}" height="${size.height}"><g fill="#fff">${marks}</g></mask></defs>`,
+    `<rect width="${size.width}" height="${size.height}" fill="${paper}"/>`,
     `<g mask="url(#marks)">${colour}</g>`,
-    `</svg>`,
   ].join("");
+}
 
-  return new Blob([document], { type: "image/svg+xml" });
+/**
+ * Writes dots as path data, at two decimals.
+ *
+ * Two decimals is a hundredth of a pixel on a frame that is pixels wide, which
+ * is far below anything a curve can show — and a screen is tens of thousands
+ * of dots, so the digits that carry no information are the file size.
+ *
+ * Every subpath is wound the same way, clockwise, because the plates are
+ * filled `nonzero`: two overlapping dots wound against each other would
+ * cancel and print a hole.
+ */
+function svgPathSink(): DotSink & { data(): string } {
+  const parts: string[] = [];
+  const n = (value: number) => decimal(value, 2);
+
+  return {
+    circle(x, y, radius) {
+      const r = n(radius);
+      const span = n(radius * 2);
+      parts.push(`M${n(x - radius)} ${n(y)}a${r} ${r} 0 1 1 ${span} 0a${r} ${r} 0 1 1 -${span} 0Z`);
+    },
+    ellipse(x, y, major, minor, angle) {
+      const degrees = n((angle * 180) / Math.PI);
+      const dx = major * Math.cos(angle);
+      const dy = major * Math.sin(angle);
+      parts.push(
+        `M${n(x + dx)} ${n(y + dy)}`
+        + `A${n(major)} ${n(minor)} ${degrees} 0 1 ${n(x - dx)} ${n(y - dy)}`
+        + `A${n(major)} ${n(minor)} ${degrees} 0 1 ${n(x + dx)} ${n(y + dy)}Z`,
+      );
+    },
+    polygon(points) {
+      const [first, ...rest] = points;
+      parts.push(
+        `M${n(first[0])} ${n(first[1])}`
+        + rest.map(([x, y]) => `L${n(x)} ${n(y)}`).join("")
+        + "Z",
+      );
+    },
+    data() {
+      return parts.join("");
+    },
+  };
+}
+
+/** #rrggbb, or #rgb, to its negative. */
+function negate(color: string) {
+  const hex = color.replace("#", "");
+  const full = hex.length === 3 ? [...hex].map((digit) => digit + digit).join("") : hex;
+  const value = Number.parseInt(full, 16);
+  if (full.length !== 6 || Number.isNaN(value)) return color;
+  return `#${(0xffffff - value).toString(16).padStart(6, "0")}`;
+}
+
+/**
+ * The halftone frame: one path per plate, in its own ink.
+ *
+ * The plates multiply, which is what makes overlapping inks subtract instead
+ * of brighten, and is exactly what the canvas renderer does. Inverting is not
+ * a second compositing model: the negative of a multiply is the same screen of
+ * negated inks on black paper — `1 − ab` is `screen(1 − a, 1 − b)` — so the
+ * inverted export is the same geometry with two attributes changed.
+ *
+ * A single plate needs no blend at all: black dots on white paper are the same
+ * under any of them, and leaving the attribute off keeps a mono export
+ * openable by editors that have never heard of blend modes.
+ */
+function halftoneBody(settings: Settings, field: ToneField, size: Frame) {
+  const halftone = settings.halftone;
+  const pitch = screenPitch(size.width, halftone);
+  const angles = screenAngles(halftone);
+  const names = plateNames(halftone);
+  const colors = plateColors(halftone);
+  const sinks = angles.map(() => svgPathSink());
+
+  for (const dot of screenDots(settings, field, size.width, size.height)) {
+    dotOutline(sinks[dot.plate], halftone.shape, dot.x, dot.y, pitch, dot.area, angles[dot.plate]);
+  }
+
+  const blend = angles.length > 1
+    ? ` style="mix-blend-mode:${settings.invert ? "screen" : "multiply"}"`
+    : "";
+  const plates = sinks.map((sink, index) => {
+    const data = sink.data();
+    if (!data) return "";
+    const ink = settings.invert ? negate(colors[index]) : colors[index];
+    return `<path id="plate-${xml(names[index])}" fill="${ink}"${blend} d="${data}"/>`;
+  }).join("");
+
+  return `<rect width="${size.width}" height="${size.height}" fill="${settings.invert ? "#000000" : "#ffffff"}"/>${plates}`;
+}
+
+/** An editable SVG of the currently visible frame, in whichever mode it is. */
+export function exportSvg(options: SvgOptions, title: string) {
+  const { settings, field, size } = options;
+
+  if (settings.mode === "halftone") {
+    return new Blob([svgDocument(
+      size,
+      title,
+      "Generated locally by glyph art. Each plate is one path of screen dots, "
+      + "solved from ink area rather than traced.",
+      halftoneBody(settings, field, size),
+    )], { type: "image/svg+xml" });
+  }
+
+  return new Blob([svgDocument(
+    size,
+    title,
+    "Generated locally by glyph art. Mark masks were traced into vector paths.",
+    glyphBody(options),
+  )], { type: "image/svg+xml" });
 }

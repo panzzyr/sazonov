@@ -1,5 +1,20 @@
 # Architecture decisions
 
+## 2026-09-09 — glyph art writes a halftone SVG from the dot solve, not by tracing
+
+- **Decision:** Extend SVG export to halftone mode by sharing the lattice walk and
+  the dot geometry with the canvas renderer through a sink, so each plate becomes
+  one path of real circles, ellipses and polygons.
+- **Alternatives:** Trace the rendered halftone canvas the way glyph marks are traced;
+  export mono only; keep halftone raster-only.
+- **Reason:** A halftone dot is solved from ink area as a shape, so it was never a
+  bitmap to trace — tracing would fix the screen at one resolution and hand an
+  editor a contour of a picture of a dot instead of the dot.
+- **Consequences:** Plates carry their own ink and `mix-blend-mode: multiply`; invert
+  is the same geometry as negated inks screened on black, which is identical
+  arithmetic. A fine ruling on a large frame is tens of thousands of subpaths, so
+  the file grows with the square of the ruling.
+
 ## 2026-09-09 — glyph art separates output resolution from preview zoom
 
 - **Decision:** Add one common `outputWidth` setting from 256 to 4096 px for both

@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   dotArea,
+  dotOutline,
   latticeRange,
   plateColors,
   plateNames,
   screenAngles,
+  screenDots,
+  screenPitch,
   separate,
+  type DotSink,
 } from "../src/engine/halftone";
 import { sequenceSize } from "../src/export/renderSequence";
 import { defaultSettings, halftoneSize, separations } from "../src/types";
@@ -202,5 +206,118 @@ describe("output resolution", () => {
       expect(frame.width % 2).toBe(0);
       expect(frame.height % 2).toBe(0);
     }
+  });
+});
+
+/** A sink that keeps what it was handed, so the geometry can be measured. */
+function recordingSink() {
+  const circles: { x: number; y: number; radius: number }[] = [];
+  const ellipses: { major: number; minor: number; angle: number }[] = [];
+  const polygons: [number, number][][] = [];
+  const sink: DotSink = {
+    circle: (x, y, radius) => circles.push({ x, y, radius }),
+    ellipse: (_x, _y, major, minor, angle) => ellipses.push({ major, minor, angle }),
+    polygon: (points) => polygons.push(points),
+  };
+  return { sink, circles, ellipses, polygons };
+}
+
+/** Shoelace, so a polygon can be checked against the area it was solved from. */
+function polygonArea(points: [number, number][]) {
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[(index + 1) % points.length];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(sum) / 2;
+}
+
+const flatField = (gridW: number, gridH: number, value: number) => ({
+  gridW,
+  gridH,
+  tone: new Float32Array(gridW * gridH),
+  color: new Uint8ClampedArray(gridW * gridH * 3).fill(value),
+});
+
+describe("dot geometry", () => {
+  it("gives a round dot the area it was solved from", () => {
+    const { sink, circles } = recordingSink();
+    dotOutline(sink, "round", 10, 20, 8, 0.5, 0);
+    expect(circles).toHaveLength(1);
+    expect(circles[0]).toMatchObject({ x: 10, y: 20 });
+    expect((Math.PI * circles[0].radius ** 2) / 8 ** 2).toBeCloseTo(0.5, 6);
+  });
+
+  it.each([
+    ["square", 0.36],
+    ["diamond", 0.36],
+    ["line", 0.4],
+  ] as const)("gives a %s dot the area it was solved from", (shape, area) => {
+    const { sink, polygons } = recordingSink();
+    dotOutline(sink, shape, 0, 0, 10, area, 0.3);
+    expect(polygons).toHaveLength(1);
+    expect(polygonArea(polygons[0]) / 100).toBeCloseTo(area, 6);
+  });
+
+  it("keeps an elliptical dot's area while stretching it", () => {
+    const { sink, ellipses } = recordingSink();
+    dotOutline(sink, "ellipse", 0, 0, 10, 0.25, 0.5);
+    expect((Math.PI * ellipses[0].major * ellipses[0].minor) / 100).toBeCloseTo(0.25, 6);
+    expect(ellipses[0].major).toBeGreaterThan(ellipses[0].minor);
+    expect(ellipses[0].angle).toBeCloseTo(0.5, 6);
+  });
+
+  it("rotates a polygon into frame space around the dot", () => {
+    const { sink, polygons } = recordingSink();
+    dotOutline(sink, "square", 100, 50, 10, 1, Math.PI / 4);
+    for (const [x, y] of polygons[0]) {
+      expect(Math.hypot(x - 100, y - 50)).toBeCloseTo(Math.SQRT2 * 5, 6);
+    }
+  });
+
+  it("draws a cross as two overlapping bars", () => {
+    const { sink, polygons } = recordingSink();
+    dotOutline(sink, "cross", 0, 0, 10, 0.19, 0);
+    expect(polygons).toHaveLength(2);
+    // Two bars of the same thickness, minus the square they share.
+    const overlap = (polygonArea(polygons[0]) / 10) ** 2;
+    expect((polygonArea(polygons[0]) + polygonArea(polygons[1]) - overlap) / 100)
+      .toBeCloseTo(0.19, 6);
+  });
+});
+
+describe("the lattice walk", () => {
+  const settings = (overrides: Partial<typeof defaultSettings.halftone> = {}) => ({
+    ...defaultSettings,
+    mode: "halftone" as const,
+    halftone: halftone(overrides),
+  });
+
+  it("prints nothing on white paper and something everywhere on black", () => {
+    expect([...screenDots(settings(), flatField(8, 8, 255), 200, 200)]).toHaveLength(0);
+    const dark = [...screenDots(settings({ lines: 10 }), flatField(8, 8, 0), 200, 200)];
+    expect(dark.length).toBeGreaterThan(90);
+    for (const dot of dark) expect(dot.area).toBeCloseTo(1, 3);
+  });
+
+  it("covers the frame at the ruling it was given", () => {
+    const width = 300;
+    const dots = [...screenDots(settings({ lines: 15, angle: 0 }), flatField(4, 4, 0), width, 200)];
+    const pitch = screenPitch(width, halftone({ lines: 15 }));
+    expect(pitch).toBe(20);
+    const inside = dots.filter((dot) => dot.x >= 0 && dot.x <= width && dot.y >= 0 && dot.y <= 200);
+    expect(inside).toHaveLength(15 * 10);
+  });
+
+  it("walks one lattice per plate, in plate order", () => {
+    const dots = [...screenDots(settings({ separation: "cmyk", lines: 12 }), flatField(4, 4, 40), 240, 240)];
+    const plates = [...new Set(dots.map((dot) => dot.plate))];
+    expect(plates).toEqual([0, 1, 2, 3]);
+  });
+
+  it("never asks for a dot larger than the clamp the renderer expects", () => {
+    const dots = [...screenDots(settings({ lines: 12, spread: 1.4 }), flatField(4, 4, 0), 240, 240)];
+    for (const dot of dots) expect(dot.area).toBeLessThanOrEqual(1.6);
   });
 });

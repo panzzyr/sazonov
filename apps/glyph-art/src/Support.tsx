@@ -123,7 +123,13 @@ export function Support() {
             In glyph mode, SVG exports the current frame as editable vector paths. Every
             mark — including type and bitmap scans — is traced from the measured mask used
             by the preview. Antialiased fringes become a hard contour; PNG remains the
-            exact raster reference. Halftone SVG is not available yet.
+            exact raster reference.
+          </p>
+          <p>
+            In halftone mode, SVG is not traced: the dots are solved from ink area as
+            curves and polygons, so the file is the screen itself and stays crisp at any
+            size. Each plate is one path, named and filled with its own ink, set to
+            multiply the way the inks do — a mono screen is a single black path on white.
           </p>
         </section>
 

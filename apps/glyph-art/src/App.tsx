@@ -11,6 +11,7 @@ import { autoLevels, gridSize, sampleSource, type ToneField } from "./engine/ton
 import { exportPngSequence } from "./export/pngSequence";
 import { canEncodeMp4, exportMp4 } from "./export/mp4";
 import { exportSvg } from "./export/svg";
+import { Icon } from "./components/Icons";
 import {
   downloadBlob,
   frameCount,
@@ -437,7 +438,11 @@ export function App() {
     abortRef.current = controller;
     setPlaying(false);
     setMessage(null);
-    const label = format === "png" ? "rendering PNG" : format === "mp4" ? "encoding MP4" : "tracing SVG";
+    const label = format === "png"
+      ? "rendering PNG"
+      : format === "mp4"
+        ? "encoding MP4"
+        : settings.mode === "halftone" ? "drawing SVG" : "tracing SVG";
     setBusy({ label, done: 0, total: format === "svg" ? 1 : totalFrames });
 
     const stem = (media?.name ?? "glyph-art").replace(/\.[^.]+$/, "");
@@ -449,8 +454,11 @@ export function App() {
 
     try {
       if (format === "svg") {
-        if (!field) throw new Error("The current frame is not ready yet.");
-        const blob = exportSvg({ settings, field, library, frame, ramp }, `${stem} — glyph art`);
+        if (!field || frameWidth === 0) throw new Error("The current frame is not ready yet.");
+        const blob = exportSvg(
+          { settings, field, library, frame, ramp, size: { width: frameWidth, height: frameHeight } },
+          `${stem} — glyph art`,
+        );
         setBusy({ label, done: 1, total: 1 });
         downloadBlob(blob, `${stem}-glyph-art-${String(frame).padStart(4, "0")}.svg`);
       } else if (format === "png") {
@@ -483,7 +491,7 @@ export function App() {
       abortRef.current = null;
       setBusy(null);
     }
-  }, [exportSource, field, format, frame, inks, library, media?.name, ramp, separationPlates, settings, totalFrames]);
+  }, [exportSource, field, format, frame, frameWidth, frameHeight, inks, library, media?.name, ramp, separationPlates, settings, totalFrames]);
 
   const copyShareLink = useCallback(() => {
     window.location.hash = `p=${encodeSettings(settings)}`;
@@ -563,10 +571,6 @@ export function App() {
     };
   }, [previewZoom, raster, viewportSize]);
 
-  useEffect(() => {
-    if (settings.mode === "halftone" && format === "svg") setFormat("png");
-  }, [format, settings.mode]);
-
   const setHalftone = <Key extends keyof HalftoneSettings>(
     key: Key,
     value: HalftoneSettings[Key],
@@ -577,13 +581,14 @@ export function App() {
       <div className="workspace">
         <aside className="panel panel-left" aria-label="Source and grid">
           <section className="panel-block">
-            <h2>mode</h2>
+            <h2><Icon name="mode" />mode</h2>
             <div className="toggle-row">
               <button
                 type="button"
                 aria-pressed={!halftoning}
                 onClick={() => setGlobal("mode", "glyph")}
               >
+                <Icon name="marks" />
                 glyphs
               </button>
               <button
@@ -591,6 +596,7 @@ export function App() {
                 aria-pressed={halftoning}
                 onClick={() => setGlobal("mode", "halftone")}
               >
+                <Icon name="screen" />
                 halftone
               </button>
             </div>
@@ -603,7 +609,7 @@ export function App() {
           </section>
 
           <section className="panel-block">
-            <h2>source</h2>
+            <h2><Icon name="source" />source</h2>
             {/* Not image/*: an SVG source cannot be relied on to decode through
                 createImageBitmap, and marks are the place for vector anyway. */}
             <label className="drop">
@@ -628,7 +634,7 @@ export function App() {
 
           {!halftoning && (
             <section className="panel-block">
-              <h2>presets</h2>
+              <h2><Icon name="presets" />presets</h2>
               <div className="preset-grid">
                 {presets.map((entry) => (
                   <button
@@ -653,7 +659,7 @@ export function App() {
 
           {!halftoning && (
           <section className="panel-block">
-            <h2>grid</h2>
+            <h2><Icon name="grid" />grid</h2>
             <SliderControl
               label="cells"
               value={settings.grid}
@@ -678,7 +684,7 @@ export function App() {
           )}
 
           <section className="panel-block">
-            <h2>tone</h2>
+            <h2><Icon name="tone" />tone</h2>
             <RangeControl
               label="levels"
               value={settings.levels}
@@ -760,7 +766,7 @@ export function App() {
 
           {halftoning && (
             <section className="panel-block">
-              <h2>screen</h2>
+              <h2><Icon name="screen" />screen</h2>
               <SliderControl
                 label="lines"
                 value={halftone.lines}
@@ -799,7 +805,7 @@ export function App() {
 
           {halftoning && (
             <section className="panel-block">
-              <h2>separation</h2>
+              <h2><Icon name="separation" />separation</h2>
               <div className="toggle-row">
                 {separations.map((entry) => (
                   <button
@@ -856,7 +862,7 @@ export function App() {
 
           {!halftoning && (
           <section className="panel-block">
-            <h2>marks</h2>
+            <h2><Icon name="marks" />marks</h2>
             <div className="field">
               <input
                 type="text"
@@ -985,7 +991,7 @@ export function App() {
 
         <aside className="panel panel-right" aria-label="Output and export">
           <section className="panel-block">
-            <h2>output</h2>
+            <h2><Icon name="output" />output</h2>
             {!halftoning && (
               <div className="field">
                 <label htmlFor="seed">seed</label>
@@ -1062,7 +1068,7 @@ export function App() {
           </section>
 
           <section className="panel-block">
-            <h2>timing</h2>
+            <h2><Icon name="timing" />timing</h2>
             <SliderControl
               label="frame rate"
               value={settings.targetFps}
@@ -1122,9 +1128,10 @@ export function App() {
           </section>
 
           <section className="panel-block">
-            <h2>export</h2>
+            <h2><Icon name="export" />export</h2>
             <div className="toggle-row">
               <button type="button" aria-pressed={format === "png"} onClick={() => setFormat("png")}>
+                <Icon name="raster" />
                 png
               </button>
               <button
@@ -1133,24 +1140,31 @@ export function App() {
                 disabled={!mp4Available}
                 onClick={() => setFormat("mp4")}
               >
+                <Icon name="video" />
                 mp4
               </button>
               <button
                 type="button"
                 aria-pressed={format === "svg"}
-                disabled={halftoning}
-                title={halftoning ? "Traced SVG is available in glyph mode" : "Traced vector export"}
+                title="Vector export of the current frame"
                 onClick={() => setFormat("svg")}
               >
+                <Icon name="vector" />
                 svg
               </button>
             </div>
 
             {format === "svg" ? (
               <p className="control-hint">
-                Exports the current frame as editable vector paths. Scanned and bitmap marks are
-                traced from the same measured masks used by the preview; fine antialiasing becomes
-                a hard contour.
+                {halftoning
+                  ? "Exports the current frame as one path per plate, each dot solved from its "
+                    + "ink area rather than traced — so it stays a screen at any size. "
+                    + (halftone.separation === "mono"
+                      ? "One plate, black on white."
+                      : "The plates are set to multiply, the way the inks do.")
+                  : "Exports the current frame as editable vector paths. Scanned and bitmap marks "
+                    + "are traced from the same measured masks used by the preview; fine "
+                    + "antialiasing becomes a hard contour."}
               </p>
             ) : format === "png" ? (
               <>
@@ -1206,7 +1220,7 @@ export function App() {
           </section>
 
           <section className="panel-block">
-            <h2>project</h2>
+            <h2><Icon name="project" />project</h2>
             <div className="button-row">
               <button type="button" onClick={undo}>undo</button>
               <button type="button" onClick={redo}>redo</button>

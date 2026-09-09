@@ -59,6 +59,17 @@ const plateLabels: Record<Separation, string[]> = {
  */
 const processInks = ["#00ffff", "#ff00ff", "#ffff00", "#000000"];
 
+/**
+ * Distance between neighbouring dot centres, in frame pixels.
+ *
+ * The ruling is lines across the *width*, so the pitch follows the frame and
+ * not the source: a screen stays the same fineness on the page whatever the
+ * picture's proportion.
+ */
+export function screenPitch(width: number, settings: HalftoneSettings) {
+  return width / Math.max(1, settings.lines);
+}
+
 export function plateCount(settings: HalftoneSettings) {
   return plateAngles[settings.separation].length;
 }
@@ -205,15 +216,33 @@ function applyLevels(color: Float32Array, min: number, max: number) {
 }
 
 /**
- * Adds one dot to the current path.
+ * Somewhere for a dot to be drawn into.
+ *
+ * The shapes are solved from area in one place and consumed in two: the canvas
+ * renderer fills them into a `Path2D`, the SVG export writes them as path
+ * data. Handing both a sink is what keeps them the same dot — a rotated
+ * ellipse solved from an area is not something to write out twice and hope
+ * stays in step.
+ *
+ * Points arrive in frame space, already carried out of the rotated screen, so
+ * a sink never has to know the screen angle.
+ */
+export type DotSink = {
+  circle(x: number, y: number, radius: number): void;
+  ellipse(x: number, y: number, major: number, minor: number, angle: number): void;
+  polygon(points: [number, number][]): void;
+};
+
+/**
+ * Adds one dot to a sink.
  *
  * Every shape is solved from the same area, so changing shape changes the
  * texture of the print and not its tone. That is the whole reason to solve
  * from area rather than from a radius: a square dot and a round dot at the
  * same "size" are a third of a tone apart.
  */
-function addDot(
-  path: Path2D,
+export function dotOutline(
+  sink: DotSink,
   shape: HalftoneSettings["shape"],
   x: number,
   y: number,
@@ -225,34 +254,22 @@ function addDot(
   const sin = Math.sin(angle);
 
   if (shape === "round") {
-    path.moveTo(x + pitch * Math.sqrt(area / Math.PI), y);
-    path.arc(x, y, pitch * Math.sqrt(area / Math.PI), 0, Math.PI * 2);
+    sink.circle(x, y, pitch * Math.sqrt(area / Math.PI));
     return;
   }
 
   if (shape === "ellipse") {
     const radius = pitch * Math.sqrt(area / Math.PI);
-    const major = radius * 1.4;
-    // `ellipse` joins the current point with a line unless a subpath is opened
-    // on its own start, which for a rotated ellipse is not simply (x + rx, y).
-    path.moveTo(x + major * cos, y + major * sin);
-    path.ellipse(x, y, major, radius / 1.4, angle, 0, Math.PI * 2);
+    sink.ellipse(x, y, radius * 1.4, radius / 1.4, angle);
     return;
   }
 
   // Everything below is a polygon in screen space, carried into frame space by
   // hand. Rotating the context per dot would cost a state change per dot and
   // stop the plate from being one path and one fill.
-  const place = (u: number, v: number): [number, number] => [
-    x + u * cos - v * sin,
-    y + u * sin + v * cos,
-  ];
-  const polygon = (points: [number, number][]) => {
-    const [first, ...rest] = points.map(([u, v]) => place(u, v));
-    path.moveTo(first[0], first[1]);
-    for (const [px, py] of rest) path.lineTo(px, py);
-    path.closePath();
-  };
+  const polygon = (points: [number, number][]) => sink.polygon(
+    points.map(([u, v]): [number, number] => [x + u * cos - v * sin, y + u * sin + v * cos]),
+  );
 
   if (shape === "square") {
     const half = (pitch * Math.sqrt(area)) / 2;
@@ -281,6 +298,87 @@ function addDot(
   const span = pitch / 2;
   polygon([[-span, -thickness], [span, -thickness], [span, thickness], [-span, thickness]]);
   polygon([[-thickness, -span], [thickness, -span], [thickness, span], [-thickness, span]]);
+}
+
+/** A dot the screen asks for: which plate, where, and how much of a cell. */
+export type ScreenDot = { plate: number; x: number; y: number; area: number };
+
+/**
+ * Walks every plate's lattice and yields the dots that print.
+ *
+ * Pure arithmetic over the tone field: no canvas, no `Path2D`. The canvas
+ * renderer and the SVG export both drive their own sink from this one walk,
+ * which is what makes a traced halftone the same screen the preview showed
+ * rather than a second implementation of it.
+ */
+export function* screenDots(
+  settings: Settings,
+  field: ToneField,
+  width: number,
+  height: number,
+): Generator<ScreenDot> {
+  const { halftone, levels } = settings;
+  const pitch = screenPitch(width, halftone);
+  const angles = screenAngles(halftone);
+  const color = new Float32Array(3);
+  const scaleX = field.gridW / width;
+  const scaleY = field.gridH / height;
+
+  for (let index = 0; index < angles.length; index += 1) {
+    const angle = angles[index];
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const range = latticeRange(width, height, pitch, angle);
+
+    for (let v = range.fromV; v <= range.toV; v += 1) {
+      const screenV = (v + 0.5) * pitch;
+      for (let u = range.fromU; u <= range.toU; u += 1) {
+        const screenU = (u + 0.5) * pitch;
+        const x = screenU * cos - screenV * sin;
+        const y = screenU * sin + screenV * cos;
+        if (x < -pitch || y < -pitch || x > width + pitch || y > height + pitch) continue;
+
+        sampleColor(field, x * scaleX, y * scaleY, color);
+        applyLevels(color, levels.min, levels.max);
+        const inks = separate(
+          color[0],
+          color[1],
+          color[2],
+          halftone.separation,
+          halftone.blackGeneration,
+        );
+
+        // `spread` is a linear scale on the dot, the way ink spreading into
+        // paper is, so it enters the area as its square.
+        const area = dotArea(inks[index], halftone.gain) * halftone.spread ** 2;
+        if (area <= 0.0005) continue;
+        yield { plate: index, x, y, area: Math.min(1.6, area) };
+      }
+    }
+  }
+}
+
+/** Fills a `Path2D`, the shape the canvas renderer wants. */
+function pathSink(path: Path2D): DotSink {
+  return {
+    circle(x, y, radius) {
+      path.moveTo(x + radius, y);
+      path.arc(x, y, radius, 0, Math.PI * 2);
+    },
+    ellipse(x, y, major, minor, angle) {
+      // `ellipse` joins the current point with a line unless a subpath is
+      // opened on its own start, which for a rotated ellipse is not simply
+      // (x + rx, y).
+      path.moveTo(x + major * Math.cos(angle), y + major * Math.sin(angle));
+      path.ellipse(x, y, major, minor, angle, 0, Math.PI * 2);
+    },
+    polygon(points) {
+      const [first, ...rest] = points;
+      path.moveTo(first[0], first[1]);
+      for (const [x, y] of rest) path.lineTo(x, y);
+      path.closePath();
+    },
+  };
 }
 
 export type HalftoneOptions = {
@@ -320,7 +418,7 @@ export class HalftoneRenderer {
       if (canvas.height !== height) canvas.height = height;
     }
 
-    const pitch = width / Math.max(1, halftone.lines);
+    const pitch = screenPitch(width, halftone);
     const angles = screenAngles(halftone);
     const colors = plateColors(halftone);
     const paths = this.screen(settings, field, width, height, pitch, angles);
@@ -364,45 +462,19 @@ export class HalftoneRenderer {
     pitch: number,
     angles: number[],
   ) {
-    const { halftone, levels } = settings;
     const paths = angles.map(() => new Path2D());
-    const color = new Float32Array(3);
-    const scaleX = field.gridW / width;
-    const scaleY = field.gridH / height;
-
-    for (let index = 0; index < angles.length; index += 1) {
-      const angle = angles[index];
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const range = latticeRange(width, height, pitch, angle);
-
-      for (let v = range.fromV; v <= range.toV; v += 1) {
-        const screenV = (v + 0.5) * pitch;
-        for (let u = range.fromU; u <= range.toU; u += 1) {
-          const screenU = (u + 0.5) * pitch;
-          const x = screenU * cos - screenV * sin;
-          const y = screenU * sin + screenV * cos;
-          if (x < -pitch || y < -pitch || x > width + pitch || y > height + pitch) continue;
-
-          sampleColor(field, x * scaleX, y * scaleY, color);
-          applyLevels(color, levels.min, levels.max);
-          const inks = separate(
-            color[0],
-            color[1],
-            color[2],
-            halftone.separation,
-            halftone.blackGeneration,
-          );
-
-          // `spread` is a linear scale on the dot, the way ink spreading into
-          // paper is, so it enters the area as its square.
-          const area = dotArea(inks[index], halftone.gain) * halftone.spread ** 2;
-          if (area <= 0.0005) continue;
-          addDot(paths[index], halftone.shape, x, y, pitch, Math.min(1.6, area), angle);
-        }
-      }
+    const sinks = paths.map(pathSink);
+    for (const dot of screenDots(settings, field, width, height)) {
+      dotOutline(
+        sinks[dot.plate],
+        settings.halftone.shape,
+        dot.x,
+        dot.y,
+        pitch,
+        dot.area,
+        angles[dot.plate],
+      );
     }
-
     return paths;
   }
 

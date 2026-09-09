@@ -295,9 +295,14 @@ only its CSS dimensions, so there is still no proxy and none of printor's
 `u_pixel` class of preview/export mismatch.
 
 Every slider is paired with a commit-on-blur number field in `RangeControl.tsx`.
-Traced SVG is glyph-mode only and exports the current frame: `export/svg.ts`
-uses the same placements as the canvas renderer and turns each measured alpha
-mask into merged vector runs. PNG remains the antialiased raster reference.
+SVG exports the current frame in both modes, and `export/svg.ts` draws each one
+the way it was made. A glyph frame is *traced*: the same placements as the canvas
+renderer, with each measured alpha mask turned into merged vector runs. A
+halftone frame is not — its dots were solved from area as shapes, so
+`engine/halftone.ts` hands out the same lattice walk (`screenDots`) and the same
+geometry (`dotOutline`, through a `DotSink`) it fills into a `Path2D`, and each
+plate becomes one path in its own ink. PNG remains the antialiased raster
+reference.
 
 Same determinism rule as printor: no `Math.random()`, reroll advances the seed
 with an LCG, `tests/privacy.test.ts` greps for both.

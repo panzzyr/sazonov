@@ -327,10 +327,18 @@ or the ruling, the angle and the separation.
 `mp4` writes H.264 at the target frame rate. H.264 has no alpha channel, so MP4
 is always the flat result. The frame is never resized on the way out.
 
-`svg` writes the current glyph frame as editable vector paths. It traces every
-mark from the same measured mask used by the preview, so scanned bitmap marks
-become contours too. Their fine antialiased fringe becomes a hard edge; use PNG
-when that fringe matters. SVG is currently limited to glyph mode.
+`svg` writes the current frame as editable vector paths, and it means something
+different in each mode. In glyph mode it traces every mark from the same
+measured mask used by the preview, so scanned bitmap marks become contours too.
+Their fine antialiased fringe becomes a hard edge; use PNG when that fringe
+matters.
+
+In halftone mode nothing is traced. The dots were solved from ink area in the
+first place, so they are written as the curves and polygons they already are —
+the file is the screen itself and stays sharp at any size. Each plate is one
+path, named and filled with its own ink and set to multiply the way the inks do;
+a mono screen is a single black path on white. A fine ruling is a lot of dots,
+so a large cmyk frame makes a large file.
 
 Export stops at 900 frames.
 

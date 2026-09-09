@@ -81,11 +81,28 @@ button:disabled {
 }
 
 .panel-block h2 {
+  display: flex;
+  align-items: center;
   margin: 0 0 .75rem;
+  gap: .45rem;
   color: var(--ink-2);
   font: var(--step--2)/1 var(--font-mono);
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+
+/* Icons are drawn in the ink of whatever holds them, so a pressed toggle
+   inverts its icon with its label and nothing has to know about the theme. */
+.icon {
+  display: block;
+  flex: none;
+  width: .95rem;
+  height: .95rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .control-hint {
@@ -229,7 +246,16 @@ input[type="range"] {
 }
 
 .toggle-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 1;
+  gap: .35rem;
+}
+
+.toggle-row .icon {
+  width: .85rem;
+  height: .85rem;
 }
 
 .toggle-row button + button {
@@ -476,7 +502,10 @@ button.primary {
 }
 
 .ramp-head h2 {
+  display: flex;
+  align-items: center;
   margin: 0;
+  gap: .45rem;
   color: var(--ink-2);
   font: var(--step--2)/1 var(--font-mono);
   letter-spacing: .08em;

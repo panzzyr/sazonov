@@ -3,6 +3,7 @@ import type { GlyphLibrary, MeasuredGlyph } from "../engine/glyphLibrary";
 import { NumberEntry } from "./RangeControl";
 import { poolCorrection, type SolvedBand } from "../engine/ramp";
 import type { Settings } from "../types";
+import { Icon } from "./Icons";
 
 const wellPixels = 96;
 
@@ -90,7 +91,7 @@ export function RampEditor({
   return (
     <section className="ramp" aria-label="Tone ramp">
       <header className="ramp-head">
-        <h2>tone ramp</h2>
+        <h2><Icon name="ramp" />tone ramp</h2>
         <span className="ramp-legend" aria-hidden="true">
           <span>paper</span>
           <span className="ramp-gradient" />
