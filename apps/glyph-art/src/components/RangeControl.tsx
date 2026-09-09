@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Range } from "../types";
 
 type RangeControlProps = {
@@ -14,8 +14,69 @@ type RangeControlProps = {
   onChange: (value: Range) => void;
 };
 
-function format(value: number, precision: number, unit: string) {
-  return `${value.toFixed(precision)}${unit}`;
+type NumberEntryProps = {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  precision: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+};
+
+/** A commit-on-blur field, so clearing a number while typing does not become zero. */
+export function NumberEntry({
+  label,
+  value,
+  min,
+  max,
+  step,
+  precision,
+  disabled = false,
+  onChange,
+}: NumberEntryProps) {
+  const input = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(value.toFixed(precision));
+
+  useEffect(() => {
+    if (document.activeElement !== input.current) setDraft(value.toFixed(precision));
+  }, [precision, value]);
+
+  const commit = () => {
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed)) {
+      setDraft(value.toFixed(precision));
+      return;
+    }
+    const next = Math.min(max, Math.max(min, parsed));
+    onChange(next);
+    setDraft(next.toFixed(precision));
+  };
+
+  return (
+    <input
+      ref={input}
+      className="number-entry"
+      type="number"
+      inputMode="decimal"
+      aria-label={label}
+      min={min}
+      max={max}
+      step={step}
+      disabled={disabled}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(value.toFixed(precision));
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
 }
 
 /**
@@ -46,11 +107,28 @@ export function RangeControl({
     <div className="range-control">
       <div className="range-head">
         <label htmlFor={`${id}-min`}>{label}</label>
-        <output>
-          {low === high
-            ? format(low, digits, unit)
-            : `${format(low, digits, "")} – ${format(high, digits, unit)}`}
-        </output>
+        <div className="range-values">
+          <NumberEntry
+            label={`${label} minimum value`}
+            value={low}
+            min={min}
+            max={high}
+            step={step}
+            precision={digits}
+            onChange={(next) => onChange({ min: Math.min(next, high), max: high })}
+          />
+          <span aria-hidden="true">–</span>
+          <NumberEntry
+            label={`${label} maximum value`}
+            value={high}
+            min={low}
+            max={max}
+            step={step}
+            precision={digits}
+            onChange={(next) => onChange({ min: low, max: Math.max(next, low) })}
+          />
+          {unit && <span>{unit}</span>}
+        </div>
       </div>
       <div className="range-track">
         <div className="range-fill" style={{ left: `${leftPercent}%`, right: `${rightPercent}%` }} />
@@ -114,7 +192,18 @@ export function SliderControl({
     <div className="range-control">
       <div className="range-head">
         <label htmlFor={id}>{label}</label>
-        <output>{format(value, digits, unit)}</output>
+        <div className="range-values">
+          <NumberEntry
+            label={`${label} value`}
+            value={value}
+            min={min}
+            max={max}
+            step={step}
+            precision={digits}
+            onChange={onChange}
+          />
+          {unit && <span>{unit}</span>}
+        </div>
       </div>
       <div className="range-track single">
         <input

@@ -22,7 +22,6 @@ import {
   defaultBandCount,
   defaultSettings,
   dotShapes,
-  halftoneWidths,
   markKinds,
   maxBands,
   maxExportFrames,
@@ -31,6 +30,7 @@ import {
   maxGrid,
   maxHold,
   maxLines,
+  maxOutputWidth,
   maxPeak,
   maxSizeCeiling,
   maxSpread,
@@ -41,6 +41,7 @@ import {
   minGrid,
   minHold,
   minLines,
+  minOutputWidth,
   minPeak,
   minSizeCeiling,
   minSpread,
@@ -162,11 +163,6 @@ function readHalftone(value: unknown): HalftoneSettings {
     spread: number(value.spread, fallback.spread, minSpread, maxSpread),
     blackGeneration: number(value.blackGeneration, fallback.blackGeneration, 0, 1),
     inks: [readInk(inks[0], fallback.inks[0]), readInk(inks[1], fallback.inks[1])],
-    // An arbitrary width would let a project file ask for a frame that cannot
-    // be allocated, so only the sizes the interface offers are accepted.
-    width: halftoneWidths.includes(value.width as number)
-      ? (value.width as number)
-      : fallback.width,
   };
 }
 
@@ -192,6 +188,13 @@ export function parseSettings(value: unknown): Settings {
   settings.stillFrames = Math.round(
     number(incoming.stillFrames, defaultSettings.stillFrames, 1, maxExportFrames),
   );
+  const legacyHalftone = isObject(incoming.halftone) ? incoming.halftone.width : undefined;
+  settings.outputWidth = Math.round(number(
+    incoming.outputWidth ?? legacyHalftone,
+    defaultSettings.outputWidth,
+    minOutputWidth,
+    maxOutputWidth,
+  ) / 2) * 2;
   settings.hold = Math.round(number(incoming.hold, defaultSettings.hold, minHold, maxHold));
   settings.levels = readLevels(incoming.levels, defaultSettings.levels);
   settings.colorMode = incoming.colorMode === "source" ? "source" : "mono";

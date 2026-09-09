@@ -104,8 +104,6 @@ export type HalftoneSettings = {
   blackGeneration: number;
   /** The two duotone inks, dark first. */
   inks: [string, string];
-  /** Output width in pixels. The height follows the source's aspect. */
-  width: number;
 };
 
 export type Settings = {
@@ -153,6 +151,8 @@ export type Settings = {
   targetFps: number;
   /** Sequence length for a still source. */
   stillFrames: number;
+  /** Output width in pixels. Height follows the source-derived frame aspect. */
+  outputWidth: number;
   /** Frames each mark of a cycling band is held for, 1..24. */
   hold: number;
   /** Marks available to the bands, including anything the user added. */
@@ -168,7 +168,7 @@ export type Settings = {
  */
 export type ExportInk = "flat" | "ink" | "paper";
 
-export type ExportFormat = "png" | "mp4";
+export type ExportFormat = "png" | "mp4" | "svg";
 
 export type MediaKind = "video" | "image";
 
@@ -180,7 +180,8 @@ export const minGain = 0.5;
 export const maxGain = 2;
 export const minSpread = 0.7;
 export const maxSpread = 1.4;
-export const halftoneWidths = [1024, 1536, 2048, 3072];
+export const minOutputWidth = 256;
+export const maxOutputWidth = 4096;
 export const minBands = 2;
 export const maxBands = 24;
 export const minWeight = 0.6;
@@ -216,19 +217,14 @@ export const fontStacks: { id: string; label: string; stack: string }[] = [
   { id: "serif", label: "serif", stack: "Georgia, 'Times New Roman', Times, serif" },
 ];
 
-/**
- * Output pixels per cell. Deriving the raster from the grid rather than from
- * the source is what lets the preview canvas *be* the export frame: there is
- * no proxy, so there is no class of bugs where the two disagree.
- *
- * Always even, and always a whole number of pixels. Whole cells keep seams and
- * moiré out of the grid; even cells keep both output dimensions even, which is
- * what H.264 requires — so MP4 never has to resize the frame behind the user's
- * back and break the preview's promise.
- */
-export function cellPixels(grid: number) {
-  const fitted = Math.floor(2880 / Math.max(1, grid));
-  return Math.max(4, Math.min(24, fitted - (fitted % 2)));
+/** Makes the requested width and its aspect-derived height safe for H.264. */
+export function outputFrameSize(width: number, aspect: number) {
+  const evenWidth = Math.max(2, Math.round(width / 2) * 2);
+  const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  return {
+    width: evenWidth,
+    height: Math.max(2, Math.round((evenWidth / safeAspect) / 2) * 2),
+  };
 }
 
 export function emptyBand(): Band {
@@ -260,6 +256,7 @@ export const defaultSettings: Settings = {
   rampInvert: false,
   targetFps: 12,
   stillFrames: 1,
+  outputWidth: 2048,
   hold: 2,
   glyphs: [],
   halftone: {
@@ -274,7 +271,6 @@ export const defaultSettings: Settings = {
     spread: 1,
     blackGeneration: 0.6,
     inks: ["#14161a", "#c8452e"],
-    width: 2048,
   },
 };
 
@@ -287,7 +283,6 @@ export const defaultSettings: Settings = {
  * height follows the source. Both are even, so H.264 never resizes the frame.
  */
 export function halftoneSize(width: number, sourceWidth: number, sourceHeight: number) {
-  const across = Math.max(2, Math.round(width / 2) * 2);
-  const aspect = sourceWidth > 0 && sourceHeight > 0 ? sourceHeight / sourceWidth : 1;
-  return { width: across, height: Math.max(2, Math.round((across * aspect) / 2) * 2) };
+  const aspect = sourceWidth > 0 && sourceHeight > 0 ? sourceWidth / sourceHeight : 1;
+  return outputFrameSize(width, aspect);
 }

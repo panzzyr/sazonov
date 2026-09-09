@@ -35,10 +35,14 @@ source — browsers will not reliably decode one into a bitmap.
 Decoding is the browser's job. If an MP4 or MOV will not open, convert it to
 H.264 or export an image sequence from your editor instead.
 
-The output raster is worked out from the grid, not from the source: at 72 cells
-across, the frame comes out 1728 px wide. That means the canvas you are looking
-at *is* the exported frame, at full size, scaled down only by your screen. There
-is no separate preview quality to get wrong.
+`frame width` sets the output from 256 to 4096 px; height follows the source.
+The grid still decides how many marks fit across it, while frame width decides
+how many pixels describe those marks. The canvas you are looking at *is* that
+exported frame. The − / percentage / + controls zoom it from 25% to 800% for
+inspection without changing the export.
+
+Every numeric control has both a slider and a number field. Type a value and
+press Enter, or leave the field, to commit it.
 
 ## The grid
 
@@ -285,11 +289,10 @@ negative of a plate composite. The dots keep their sizes.
 
 ### Frame and export
 
-`frame` sets the output width — 1024, 1536, 2048 or 3072 px — and the height
-follows the source. Unlike the glyph mode there is no grid to derive it from,
-and unlike the glyph mode a dot is drawn as a path at a fractional position, so
-there is nothing to align to. Both dimensions come out even, so MP4 never has to
-resize the frame.
+`frame width` is the same free 256–4096 px control as in glyph mode, and the
+height follows the source. A dot is drawn as a path at a fractional position,
+so there is nothing to align to. Both dimensions come out even, so MP4 never
+has to resize the frame.
 
 In two or four inks, `separations` adds one folder per plate to the ZIP, each
 plate black on white. That is what a printer loads.
@@ -323,6 +326,11 @@ or the ruling, the angle and the separation.
 
 `mp4` writes H.264 at the target frame rate. H.264 has no alpha channel, so MP4
 is always the flat result. The frame is never resized on the way out.
+
+`svg` writes the current glyph frame as editable vector paths. It traces every
+mark from the same measured mask used by the preview, so scanned bitmap marks
+become contours too. Their fine antialiased fringe becomes a hard edge; use PNG
+when that fringe matters. SVG is currently limited to glyph mode.
 
 Export stops at 900 frames.
 

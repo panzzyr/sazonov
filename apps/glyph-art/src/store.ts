@@ -69,6 +69,7 @@ type GlobalKey =
   | "rampInvert"
   | "targetFps"
   | "stillFrames"
+  | "outputWidth"
   | "hold"
   | "levels";
 

@@ -288,10 +288,16 @@ it. Pool sizes are per set — a set of fourteen scans cannot fill a level of te
 — and twelve is a hard ceiling, because `projectState.readBands` slices a band
 there and a thirteenth mark would vanish on save.
 
-**The preview is the export.** The raster is `grid × cellPixels(grid)`, derived
-from the grid rather than the source, so there is no proxy and none of printor's
-`u_pixel` class of preview/export mismatch. `cellPixels` returns an even number
-so H.264 never has to resize the frame.
+**The preview is the export.** `settings.outputWidth` is the explicit 256–4096px
+frame width; height follows the grid/source aspect and both sides are rounded
+even for H.264. The canvas is rendered at that exact size. Preview zoom changes
+only its CSS dimensions, so there is still no proxy and none of printor's
+`u_pixel` class of preview/export mismatch.
+
+Every slider is paired with a commit-on-blur number field in `RangeControl.tsx`.
+Traced SVG is glyph-mode only and exports the current frame: `export/svg.ts`
+uses the same placements as the canvas renderer and turns each measured alpha
+mask into merged vector runs. PNG remains the antialiased raster reference.
 
 Same determinism rule as printor: no `Math.random()`, reroll advances the seed
 with an LCG, `tests/privacy.test.ts` greps for both.

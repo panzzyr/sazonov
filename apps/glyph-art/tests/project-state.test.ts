@@ -7,7 +7,15 @@ import {
   shareableSettings,
 } from "../src/projectState";
 import { initialSettings, resampleBands, useGlyphArtStore } from "../src/store";
-import { maxBands, maxGrid, minBands, minGrid, type Settings } from "../src/types";
+import {
+  maxBands,
+  maxGrid,
+  maxOutputWidth,
+  minBands,
+  minGrid,
+  minOutputWidth,
+  type Settings,
+} from "../src/types";
 
 describe("parsing an untrusted project", () => {
   it("rejects anything that is not an object", () => {
@@ -22,13 +30,26 @@ describe("parsing an untrusted project", () => {
   });
 
   it("clamps numbers into their stated ranges", () => {
-    const settings = parseSettings({ grid: 5000, weight: 99, hand: -3, targetFps: 400, hold: 0 });
+    const settings = parseSettings({
+      grid: 5000,
+      weight: 99,
+      hand: -3,
+      targetFps: 400,
+      hold: 0,
+      outputWidth: 99_999,
+    });
     expect(settings.grid).toBeLessThanOrEqual(maxGrid);
     expect(settings.grid).toBeGreaterThanOrEqual(minGrid);
     expect(settings.weight).toBeLessThanOrEqual(2.4);
     expect(settings.hand).toBe(0);
     expect(settings.targetFps).toBe(16);
     expect(settings.hold).toBe(1);
+    expect(settings.outputWidth).toBe(maxOutputWidth);
+    expect(parseSettings({ outputWidth: 1 }).outputWidth).toBe(minOutputWidth);
+  });
+
+  it("migrates the old halftone frame width into the common output setting", () => {
+    expect(parseSettings({ halftone: { width: 1536 } }).outputWidth).toBe(1536);
   });
 
   it("ignores a collapsed or reversed levels pair", () => {
@@ -104,10 +125,12 @@ describe("share links", () => {
     const settings = initialSettings();
     settings.grid = 96;
     settings.weight = 1.1;
+    settings.outputWidth = 3072;
     settings.rampInvert = true;
     const restored = decodeSettings(encodeSettings(settings));
     expect(restored.grid).toBe(96);
     expect(restored.weight).toBeCloseTo(1.1);
+    expect(restored.outputWidth).toBe(3072);
     expect(restored.rampInvert).toBe(true);
   });
 

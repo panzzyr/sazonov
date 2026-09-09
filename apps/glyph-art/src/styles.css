@@ -105,15 +105,32 @@ button:disabled {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: .5rem;
   font: var(--step--2)/1 var(--font-mono);
   letter-spacing: .06em;
   text-transform: uppercase;
 }
 
-.range-head output {
+.range-values {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.number-entry {
+  width: 4rem;
+  padding: .2rem .3rem;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .range-track {
@@ -357,30 +374,54 @@ button.primary {
  */
 .canvas-stage {
   position: relative;
-  display: grid;
+  display: flex;
   min-height: 0;
   flex: 1;
-  padding: 1rem;
+  overflow: auto;
   background-color: color-mix(in srgb, var(--ink) 4%, var(--paper));
   background-image:
     linear-gradient(to right, color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px),
     linear-gradient(to bottom, color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px);
   background-size: 24px 24px;
-  place-items: center;
+  align-items: flex-start;
+}
+
+.canvas-scroll-content {
+  position: relative;
+  display: grid;
+  flex: none;
+  margin: auto;
+  place-items: stretch;
+}
+
+.canvas-scroll-content[hidden] {
+  display: none;
 }
 
 .output,
 .peek {
-  max-width: 100%;
+  width: 100%;
+  height: 100%;
   /* One rule in both themes: it separates white artwork from a near-black
      surround, and #ffffff from #f2f1ee, which would otherwise have no edge. */
-  max-height: calc(100vh - 18rem);
   border: 1px solid var(--rule);
   object-fit: contain;
 }
 
+.zoom-controls {
+  display: flex;
+}
+
+.zoom-controls button + button {
+  margin-left: -1px;
+}
+
+.zoom-controls button:nth-child(2) {
+  min-width: 3.7rem;
+}
+
 .stage-empty {
-  margin: 0;
+  margin: auto;
   color: var(--ink-2);
   font: var(--step--2)/1.4 var(--font-mono);
   letter-spacing: .05em;
@@ -540,6 +581,21 @@ button.primary {
   color: var(--ink);
 }
 
+.ramp-size-control {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+
+.ramp-size-control input[type="range"] {
+  min-width: 2rem;
+  flex: 1;
+}
+
+.ramp-size-control .number-entry {
+  width: 3rem;
+}
+
 .ramp-chips {
   display: flex;
   flex-wrap: wrap;
@@ -634,8 +690,9 @@ button.primary {
     border-bottom: 1px solid var(--rule);
   }
 
-  .output,
-  .peek {
-    max-height: 60vh;
+  .canvas-stage {
+    height: 60vh;
+    min-height: 20rem;
+    flex: none;
   }
 }

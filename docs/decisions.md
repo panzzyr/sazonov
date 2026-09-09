@@ -1,5 +1,27 @@
 # Architecture decisions
 
+## 2026-09-09 — glyph art separates output resolution from preview zoom
+
+- **Decision:** Add one common `outputWidth` setting from 256 to 4096 px for both
+  render modes, and a separate 25–800% CSS-only preview zoom with scrollable pan.
+- **Alternatives:** Keep glyph resolution implicit in the cell count; scale the
+  export canvas to implement zoom; keep halftone's four fixed width presets.
+- **Reason:** Cell count is an artistic choice while resolution is a delivery
+  choice. A loupe must never silently change the file being rendered.
+- **Consequences:** Both output dimensions stay even for H.264, old halftone
+  projects migrate their stored width, and every slider also exposes a number field.
+
+## 2026-09-09 — glyph art traces measured masks for SVG export
+
+- **Decision:** Export the current glyph frame as SVG by tracing every measured
+  mark mask into merged pixel-run paths and reusing those paths as symbols.
+- **Alternatives:** Embed raster marks in an SVG wrapper; add a tracing dependency;
+  export only the originally vector marks and omit scans.
+- **Reason:** The measured mask is the one canonical shape shared by scanned,
+  typed, uploaded, and shipped marks, and a small local tracer preserves privacy.
+- **Consequences:** The SVG contains editable vector geometry and matches placement,
+  but converts antialiased fringes to hard contours; halftone SVG remains future work.
+
 ## 2026-08-31 — Cut marks from whole pages by connected components
 
 - **Decision:** `scripts/harvest-glyphs.mjs` turns a background-removed page of
@@ -177,10 +199,9 @@
   alpha also makes ink *union* rather than stack, so overlapping shadows never
   bruise and draw order is irrelevant — and it makes the source-colour mode one
   extra `drawImage` instead of forty thousand tinted ones.
-- **Consequences:** The output raster is derived from the grid rather than the
-  source, so the preview canvas is the export frame and printor's whole
-  `u_pixel` class of preview/export mismatches cannot occur. `cellPixels` is
-  kept even so H.264 never has to resize the frame.
+- **Consequences:** The canvas itself remains the export frame and printor's
+  `u_pixel` class of preview/export mismatches cannot occur. Frame dimensions
+  are even for H.264; their current explicit width is recorded above.
 
 ## 2026-08-09 — glyph art has no fit setting
 

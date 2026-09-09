@@ -10,6 +10,7 @@ import { loopLength } from "./engine/cellParams";
 import { autoLevels, gridSize, sampleSource, type ToneField } from "./engine/tone";
 import { exportPngSequence } from "./export/pngSequence";
 import { canEncodeMp4, exportMp4 } from "./export/mp4";
+import { exportSvg } from "./export/svg";
 import {
   downloadBlob,
   frameCount,
@@ -22,16 +23,15 @@ import { activePreset, presets } from "./presets";
 import { decodeSettings, encodeSettings, hasCustomMarks, parseSettings } from "./projectState";
 import { useGlyphArtStore } from "./store";
 import {
-  cellPixels,
   dotShapes,
   fontStacks,
-  halftoneWidths,
   maxBands,
   maxFps,
   maxGain,
   maxGrid,
   maxHold,
   maxLines,
+  maxOutputWidth,
   maxPeak,
   maxSizeCeiling,
   maxSpread,
@@ -42,6 +42,7 @@ import {
   minGrid,
   minHold,
   minLines,
+  minOutputWidth,
   minPeak,
   minSizeCeiling,
   minSpread,
@@ -148,8 +149,11 @@ export function App() {
   const [libraryVersion, setLibraryVersion] = useState(0);
   const [loadingMarks, setLoadingMarks] = useState<{ done: number; total: number } | null>(null);
   const [separationPlates, setSeparationPlates] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<GlyphRenderer | null>(null);
   const halftoneRef = useRef<HalftoneRenderer | null>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
@@ -265,7 +269,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [media, settings.mode, settings.grid, settings.halftone.width, settings.targetFps, videoFrame]);
+  }, [media, settings.mode, settings.grid, settings.outputWidth, settings.targetFps, videoFrame]);
 
   // Auto-levels, once per source. A flat photo quantized into seven bands uses
   // four of them and looks dead; per-frame levels on a video would pump.
@@ -325,10 +329,24 @@ export function App() {
     if (media) URL.revokeObjectURL(media.url);
   }, [media]);
 
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const update = () => setViewportSize({
+      width: viewport.clientWidth,
+      height: viewport.clientHeight,
+    });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
   const openMedia = useCallback(async (file: File) => {
     setMessage(null);
     setPlaying(false);
     setFrame(0);
+    setPreviewZoom(1);
     const url = URL.createObjectURL(file);
     try {
       if (file.type.startsWith("video/")) {
@@ -419,17 +437,23 @@ export function App() {
     abortRef.current = controller;
     setPlaying(false);
     setMessage(null);
-    setBusy({ label: format === "png" ? "rendering PNG" : "encoding MP4", done: 0, total: totalFrames });
+    const label = format === "png" ? "rendering PNG" : format === "mp4" ? "encoding MP4" : "tracing SVG";
+    setBusy({ label, done: 0, total: format === "svg" ? 1 : totalFrames });
 
     const stem = (media?.name ?? "glyph-art").replace(/\.[^.]+$/, "");
     const onProgress = (done: number, total: number) => setBusy({
-      label: format === "png" ? "rendering PNG" : "encoding MP4",
+      label,
       done,
       total,
     });
 
     try {
-      if (format === "png") {
+      if (format === "svg") {
+        if (!field) throw new Error("The current frame is not ready yet.");
+        const blob = exportSvg({ settings, field, library, frame, ramp }, `${stem} — glyph art`);
+        setBusy({ label, done: 1, total: 1 });
+        downloadBlob(blob, `${stem}-glyph-art-${String(frame).padStart(4, "0")}.svg`);
+      } else if (format === "png") {
         const blob = await exportPngSequence({
           source: exportSource,
           settings,
@@ -459,7 +483,7 @@ export function App() {
       abortRef.current = null;
       setBusy(null);
     }
-  }, [exportSource, format, inks, library, media?.name, separationPlates, settings, totalFrames]);
+  }, [exportSource, field, format, frame, inks, library, media?.name, ramp, separationPlates, settings, totalFrames]);
 
   const copyShareLink = useCallback(() => {
     window.location.hash = `p=${encodeSettings(settings)}`;
@@ -521,12 +545,27 @@ export function App() {
     };
   }, [redo, totalFrames, undo]);
 
-  const cell = cellPixels(settings.grid);
+  const cell = raster?.cell ?? 0;
   const seamless = loopLength(settings.bands.map((band) => band.glyphs.length), settings.hold);
   const cycling = settings.bands.some((band) => band.glyphs.length > 1);
   const halftoning = settings.mode === "halftone";
   const halftone = settings.halftone;
   const preset = activePreset(settings);
+
+  const previewFrame = useMemo(() => {
+    if (!raster || viewportSize.width === 0 || viewportSize.height === 0) return null;
+    const availableWidth = Math.max(1, viewportSize.width - 32);
+    const availableHeight = Math.max(1, viewportSize.height - 32);
+    const fit = Math.min(1, availableWidth / raster.width, availableHeight / raster.height);
+    return {
+      width: Math.max(1, Math.round(raster.width * fit * previewZoom)),
+      height: Math.max(1, Math.round(raster.height * fit * previewZoom)),
+    };
+  }, [previewZoom, raster, viewportSize]);
+
+  useEffect(() => {
+    if (settings.mode === "halftone" && format === "svg") setFormat("png");
+  }, [format, settings.mode]);
 
   const setHalftone = <Key extends keyof HalftoneSettings>(
     key: Key,
@@ -751,7 +790,7 @@ export function App() {
               </div>
               <p className="control-hint">
                 lines is the ruling across the frame — {halftone.lines} of them across{" "}
-                {halftone.width}px is a {(halftone.width / halftone.lines).toFixed(0)}px dot.
+                {settings.outputWidth}px is a {(settings.outputWidth / halftone.lines).toFixed(0)}px dot.
                 Every shape is solved from the same ink area, so changing it changes the
                 texture of the print and not its tone.
               </p>
@@ -873,12 +912,18 @@ export function App() {
             if (file) void openMedia(file);
           }}
         >
-          <div className="canvas-stage">
-            {media && peek && (media.kind === "image"
-              ? <img className="peek" src={media.url} alt="" />
-              : <video className="peek" src={media.url} muted playsInline />)}
-            {/* Kept mounted so the renderer's canvas reference never changes. */}
-            <canvas ref={canvasRef} className="output" hidden={!media || peek} />
+          <div className="canvas-stage" ref={viewportRef}>
+            <div
+              className="canvas-scroll-content"
+              hidden={!media}
+              style={previewFrame ? { width: previewFrame.width, height: previewFrame.height } : undefined}
+            >
+              {media && peek && (media.kind === "image"
+                ? <img className="peek" src={media.url} alt="" />
+                : <video className="peek" src={media.url} muted playsInline />)}
+              {/* Kept mounted so the renderer's canvas reference never changes. */}
+              <canvas ref={canvasRef} className="output" hidden={!media || peek} />
+            </div>
             {!media && <p className="stage-empty">Drop an image or a video anywhere here.</p>}
             {loadingMarks && (
               <p className="stage-loading" role="status">
@@ -904,6 +949,35 @@ export function App() {
               {frame + 1}/{totalFrames}
               {raster && ` · ${field?.gridW ?? 0}×${field?.gridH ?? 0} cells · ${raster.width}×${raster.height}`}
             </span>
+            <div className="zoom-controls" role="group" aria-label="Preview zoom">
+              <button
+                type="button"
+                aria-label="Zoom out"
+                title="Zoom out"
+                disabled={!media || previewZoom <= 0.25}
+                onClick={() => setPreviewZoom((zoom) => Math.max(0.25, zoom / 2))}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                aria-label="Fit preview"
+                title="Fit preview"
+                disabled={!media}
+                onClick={() => setPreviewZoom(1)}
+              >
+                {Math.round(previewZoom * 100)}%
+              </button>
+              <button
+                type="button"
+                aria-label="Zoom in"
+                title="Zoom in"
+                disabled={!media || previewZoom >= 8}
+                onClick={() => setPreviewZoom((zoom) => Math.min(8, zoom * 2))}
+              >
+                +
+              </button>
+            </div>
           </div>
 
           {message && <p className="notice" role="status">{message}</p>}
@@ -926,20 +1000,7 @@ export function App() {
               </div>
             )}
 
-            {halftoning ? (
-              <div className="field">
-                <label htmlFor="halftone-width">frame</label>
-                <select
-                  id="halftone-width"
-                  value={halftone.width}
-                  onChange={(event) => setHalftone("width", Number(event.target.value))}
-                >
-                  {halftoneWidths.map((width) => (
-                    <option key={width} value={width}>{width}px wide</option>
-                  ))}
-                </select>
-              </div>
-            ) : (
+            {!halftoning && (
               <div className="toggle-row">
                 <button
                   type="button"
@@ -956,6 +1017,21 @@ export function App() {
                   source colour
                 </button>
               </div>
+            )}
+
+            <SliderControl
+              label="frame width"
+              value={settings.outputWidth}
+              min={minOutputWidth}
+              max={maxOutputWidth}
+              step={2}
+              unit=" px"
+              onChange={(value) => setGlobal("outputWidth", Math.round(value / 2) * 2)}
+            />
+            {raster && (
+              <p className="control-hint">
+                Export frame: {raster.width}×{raster.height}px. Preview zoom does not change it.
+              </p>
             )}
 
             <label className="check">
@@ -1059,9 +1135,24 @@ export function App() {
               >
                 mp4
               </button>
+              <button
+                type="button"
+                aria-pressed={format === "svg"}
+                disabled={halftoning}
+                title={halftoning ? "Traced SVG is available in glyph mode" : "Traced vector export"}
+                onClick={() => setFormat("svg")}
+              >
+                svg
+              </button>
             </div>
 
-            {format === "png" ? (
+            {format === "svg" ? (
+              <p className="control-hint">
+                Exports the current frame as editable vector paths. Scanned and bitmap marks are
+                traced from the same measured masks used by the preview; fine antialiasing becomes
+                a hard contour.
+              </p>
+            ) : format === "png" ? (
               <>
                 {(["flat", "ink", "paper"] as ExportInk[]).map((ink) => (
                   <label className="check" key={ink}>

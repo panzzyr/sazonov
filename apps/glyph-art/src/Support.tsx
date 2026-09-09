@@ -1,7 +1,18 @@
 import { ToolShell } from "./shared/Shell";
 import { MAX_EXPORT_FRAMES } from "./export/renderSequence";
 import { presets } from "./presets";
-import { maxBands, maxGrid, maxFps, maxLines, minBands, minFps, minGrid, minLines } from "./types";
+import {
+  maxBands,
+  maxFps,
+  maxGrid,
+  maxLines,
+  maxOutputWidth,
+  minBands,
+  minFps,
+  minGrid,
+  minLines,
+  minOutputWidth,
+} from "./types";
 
 function available(value: boolean) {
   return value ? "yes" : "no";
@@ -26,7 +37,7 @@ export function Support() {
           <tbody>
             <tr><td>2D canvas</td><td>{available(capabilities.canvas)}</td><td>Everything. glyph art cannot run without it.</td></tr>
             <tr><td>createImageBitmap</td><td>{available(capabilities.bitmap)}</td><td>Opening still images.</td></tr>
-            <tr><td>WebCodecs encoder</td><td>{available(capabilities.videoEncoder)}</td><td>MP4 export. PNG export works without it.</td></tr>
+            <tr><td>WebCodecs encoder</td><td>{available(capabilities.videoEncoder)}</td><td>MP4 export. PNG and SVG work without it.</td></tr>
           </tbody>
         </table>
 
@@ -104,9 +115,15 @@ export function Support() {
             per second. H.264 has no alpha channel, so MP4 is always the flat result.
           </p>
           <p>
-            The output raster is derived from the grid — or, in halftone, from the frame
-            width you pick — rather than from the source, so the canvas you are looking
-            at is the exported frame at full size.
+            Frame width can be set directly from {minOutputWidth} to {maxOutputWidth}
+            pixels; height follows the source. The canvas you inspect is the same frame
+            that is exported, while the preview zoom only changes its size on screen.
+          </p>
+          <p>
+            In glyph mode, SVG exports the current frame as editable vector paths. Every
+            mark — including type and bitmap scans — is traced from the measured mask used
+            by the preview. Antialiased fringes become a hard contour; PNG remains the
+            exact raster reference. Halftone SVG is not available yet.
           </p>
         </section>
 

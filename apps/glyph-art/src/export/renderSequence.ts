@@ -17,7 +17,6 @@ import { GlyphLibrary } from "../engine/glyphLibrary";
 import { solveRamp } from "../engine/ramp";
 import { gridSize, sampleSource, type ToneField } from "../engine/tone";
 import {
-  cellPixels,
   halftoneSize,
   maxExportFrames,
   type ExportInk,
@@ -50,7 +49,7 @@ export function frameCount(source: ExportSource, settings: Settings) {
  * than any ruling the tool offers and cheap next to drawing the dots.
  */
 export function halftoneField(settings: Settings, sourceWidth: number, sourceHeight: number) {
-  const frame = halftoneSize(settings.halftone.width, sourceWidth, sourceHeight);
+  const frame = halftoneSize(settings.outputWidth, sourceWidth, sourceHeight);
   return gridSize(Math.min(640, Math.round(frame.width / 4)), sourceWidth, sourceHeight);
 }
 
@@ -58,12 +57,12 @@ export function halftoneField(settings: Settings, sourceWidth: number, sourceHei
 export function sequenceSize(source: ExportSource, settings: Settings) {
   if (settings.mode === "halftone") {
     const { gridW, gridH } = halftoneField(settings, source.width, source.height);
-    const frame = halftoneSize(settings.halftone.width, source.width, source.height);
+    const frame = halftoneSize(settings.outputWidth, source.width, source.height);
     return { gridW, gridH, cell: 0, width: frame.width, height: frame.height };
   }
   const { gridW, gridH } = gridSize(settings.grid, source.width, source.height);
-  const cell = cellPixels(settings.grid);
-  return { gridW, gridH, cell, width: gridW * cell, height: gridH * cell };
+  const { cell, width, height } = outputSize(settings, { gridW, gridH });
+  return { gridW, gridH, cell, width, height };
 }
 
 function seek(video: HTMLVideoElement, time: number) {

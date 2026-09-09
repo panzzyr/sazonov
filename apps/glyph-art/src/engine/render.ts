@@ -11,19 +11,19 @@
  * cheap — the per-cell average colours are drawn over the mask through the
  * same `source-in`, so tinting forty thousand marks costs one `drawImage`.
  *
- * There is no proxy preview. The raster is derived from the grid, not from the
- * source, so the canvas on screen *is* the export frame.
+ * There is no proxy preview. The raster uses the explicit output width and the
+ * source-derived grid aspect, so the canvas on screen *is* the export frame.
  */
 
 import { bandFor, type ToneField } from "./tone";
 import { cycleIndex, handDraw } from "./cellParams";
 import { poolCorrection, solveRamp, type SolvedBand } from "./ramp";
-import type { GlyphLibrary } from "./glyphLibrary";
-import { cellPixels, minMarkSize, type ExportInk, type Settings } from "../types";
+import type { GlyphLibrary, MeasuredGlyph } from "./glyphLibrary";
+import { minMarkSize, outputFrameSize, type ExportInk, type Settings } from "../types";
 
-export function outputSize(settings: Settings, field: ToneField) {
-  const cell = cellPixels(settings.grid);
-  return { cell, width: field.gridW * cell, height: field.gridH * cell };
+export function outputSize(settings: Settings, field: Pick<ToneField, "gridW" | "gridH">) {
+  const frame = outputFrameSize(settings.outputWidth, field.gridW / field.gridH);
+  return { ...frame, cell: frame.width / field.gridW };
 }
 
 export type RenderOptions = {
@@ -35,6 +35,60 @@ export type RenderOptions = {
   /** Pre-solved ramp, so a sequence does not re-solve it every frame. */
   ramp?: SolvedBand[];
 };
+
+export type GlyphPlacement = {
+  glyph: MeasuredGlyph;
+  cellIndex: number;
+  centreX: number;
+  centreY: number;
+  width: number;
+  height: number;
+  rotation: number;
+};
+
+/** The exact mark geometry shared by the canvas and traced-SVG renderers. */
+export function* glyphPlacements(
+  { settings, field, library, frame }: RenderOptions,
+  ramp: SolvedBand[],
+  cell: number,
+): Generator<GlyphPlacement> {
+  const bandCount = settings.bands.length;
+
+  for (let y = 0; y < field.gridH; y += 1) {
+    for (let x = 0; x < field.gridW; x += 1) {
+      const cellIndex = y * field.gridW + x;
+      const band = bandFor(field.tone[cellIndex], settings.levels, bandCount, settings.rampInvert);
+      const pool = settings.bands[band]?.glyphs;
+      if (!pool || pool.length === 0) continue;
+
+      const reference = library.get(pool[0]);
+      if (!reference || reference.density <= 0) continue;
+
+      const chosen = pool.length === 1
+        ? reference
+        : library.get(pool[cycleIndex(settings.seed, cellIndex, pool.length, frame, settings.hold)]);
+      if (!chosen || chosen.density <= 0) continue;
+
+      const hand = handDraw(settings.seed, cellIndex, settings.hand);
+      const size = Math.min(
+        settings.maxSize,
+        ramp[band].size * poolCorrection(reference, chosen) * hand.sizeScale,
+      );
+      if (size < minMarkSize) continue;
+
+      const long = size * cell;
+      yield {
+        glyph: chosen,
+        cellIndex,
+        centreX: (x + 0.5 + hand.offsetX) * cell,
+        centreY: (y + 0.5 + hand.offsetY) * cell,
+        width: chosen.aspect >= 1 ? long : long * chosen.aspect,
+        height: chosen.aspect >= 1 ? long / chosen.aspect : long,
+        rotation: hand.rotation,
+      };
+    }
+  }
+}
 
 function context2d(canvas: HTMLCanvasElement) {
   const context = canvas.getContext("2d");
@@ -81,57 +135,30 @@ export class GlyphRenderer {
     ramp: SolvedBand[],
     cell: number,
   ) {
-    const bandCount = settings.bands.length;
     const rotates = settings.hand > 0;
 
-    for (let y = 0; y < field.gridH; y += 1) {
-      for (let x = 0; x < field.gridW; x += 1) {
-        const cellIndex = y * field.gridW + x;
-        const band = bandFor(field.tone[cellIndex], settings.levels, bandCount, settings.rampInvert);
-        const pool = settings.bands[band]?.glyphs;
-        if (!pool || pool.length === 0) continue;
-
-        const reference = library.get(pool[0]);
-        if (!reference || reference.density <= 0) continue;
-
-        const chosen = pool.length === 1
-          ? reference
-          : library.get(pool[cycleIndex(settings.seed, cellIndex, pool.length, frame, settings.hold)]);
-        if (!chosen || chosen.density <= 0) continue;
-
-        const hand = handDraw(settings.seed, cellIndex, settings.hand);
-        // The ceiling binds every mark in the pool, not only the band's
-        // reference: a mark corrected up to match the reference's coverage can
-        // land past it, and the promise is that no mark overflows its cell by
-        // more than the user asked for.
-        const size = Math.min(
-          settings.maxSize,
-          ramp[band].size * poolCorrection(reference, chosen) * hand.sizeScale,
-        );
-        if (size < minMarkSize) continue;
-
-        const long = size * cell;
-        const markWidth = chosen.aspect >= 1 ? long : long * chosen.aspect;
-        const markHeight = chosen.aspect >= 1 ? long / chosen.aspect : long;
-        const centreX = (x + 0.5 + hand.offsetX) * cell;
-        const centreY = (y + 0.5 + hand.offsetY) * cell;
-
-        if (rotates && hand.rotation !== 0) {
-          context.save();
-          context.translate(centreX, centreY);
-          context.rotate(hand.rotation);
-          context.drawImage(chosen.bitmap, -markWidth / 2, -markHeight / 2, markWidth, markHeight);
-          context.restore();
-          continue;
-        }
+    for (const placement of glyphPlacements({ settings, field, library, frame, ink: "flat", ramp }, ramp, cell)) {
+      if (rotates && placement.rotation !== 0) {
+        context.save();
+        context.translate(placement.centreX, placement.centreY);
+        context.rotate(placement.rotation);
         context.drawImage(
-          chosen.bitmap,
-          centreX - markWidth / 2,
-          centreY - markHeight / 2,
-          markWidth,
-          markHeight,
+          placement.glyph.bitmap,
+          -placement.width / 2,
+          -placement.height / 2,
+          placement.width,
+          placement.height,
         );
+        context.restore();
+        continue;
       }
+      context.drawImage(
+        placement.glyph.bitmap,
+        placement.centreX - placement.width / 2,
+        placement.centreY - placement.height / 2,
+        placement.width,
+        placement.height,
+      );
     }
   }
 

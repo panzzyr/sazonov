@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { GlyphLibrary, MeasuredGlyph } from "../engine/glyphLibrary";
+import { NumberEntry } from "./RangeControl";
 import { poolCorrection, type SolvedBand } from "../engine/ramp";
 import type { Settings } from "../types";
 
@@ -158,16 +159,28 @@ export function RampEditor({
                 {solved.manual && <span className="ramp-manual" title="Set by hand">·</span>}
               </p>
 
-              <input
-                type="range"
-                min={5}
-                max={200}
-                step={1}
-                value={Math.round(solved.size * 100)}
-                disabled={pool.length === 0}
-                aria-label={`Band ${index} size`}
-                onChange={(event) => onSizeChange(index, Number(event.target.value) / 100)}
-              />
+              <div className="ramp-size-control">
+                <input
+                  type="range"
+                  min={5}
+                  max={200}
+                  step={1}
+                  value={Math.round(solved.size * 100)}
+                  disabled={pool.length === 0}
+                  aria-label={`Band ${index} size slider`}
+                  onChange={(event) => onSizeChange(index, Number(event.target.value) / 100)}
+                />
+                <NumberEntry
+                  label={`Band ${index} size percent`}
+                  value={Math.round(solved.size * 100)}
+                  min={5}
+                  max={200}
+                  step={1}
+                  precision={0}
+                  disabled={pool.length === 0}
+                  onChange={(value) => onSizeChange(index, value / 100)}
+                />
+              </div>
 
               <div className="ramp-chips">
                 {band.glyphs.map((id, position) => (

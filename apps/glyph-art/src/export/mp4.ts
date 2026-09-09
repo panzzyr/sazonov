@@ -5,9 +5,8 @@
  * marks to transparency are PNG-only; MP4 always writes the flat result. The
  * muxer runs entirely in memory — nothing is uploaded.
  *
- * The frame is never resized here. `cellPixels` already guarantees an even
- * raster, which is H.264's only dimensional requirement, so what the preview
- * showed is exactly what gets encoded.
+ * The frame is never resized here. `outputFrameSize` guarantees an even raster,
+ * which is H.264's dimensional requirement, so preview and export still agree.
  */
 
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";

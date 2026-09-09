@@ -1,5 +1,5 @@
 import { strToU8, zipSync, type Zippable } from "fflate";
-import { renderSequence, type SequenceOptions } from "./renderSequence";
+import { renderSequence, sequenceSize, type SequenceOptions } from "./renderSequence";
 import { plateNames } from "../engine/halftone";
 import type { ExportInk } from "../types";
 
@@ -82,6 +82,7 @@ export async function exportPngSequence(options: PngExportOptions) {
   }
 
   const { settings } = options;
+  const frame = sequenceSize(options.source, settings);
   const description = settings.mode === "halftone"
     ? [
       `screen: ${settings.halftone.lines} lines across at ${settings.halftone.angle}°`,
@@ -98,6 +99,7 @@ export async function exportPngSequence(options: PngExportOptions) {
     "",
     `frames per pass: ${total / passes.length}`,
     `frame rate: ${settings.targetFps} fps`,
+    `frame: ${frame.width} × ${frame.height} px`,
     ...description,
     "",
     "passes:",

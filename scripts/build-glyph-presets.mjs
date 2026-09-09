@@ -62,7 +62,7 @@ const MAX_SIZE = 1.15;
 /** Below this a mark is grit rather than a mark. */
 const MIN_SIZE = 0.14;
 
-/** Output pixels per cell at the default grid of 72 — `cellPixels(72)`. */
+/** Canonical proof-sheet pixels per cell used to reject strokes that dissolve. */
 const CELL_PIXELS = 24;
 
 /** A stroke thinner than this at print size dissolves into grey. */

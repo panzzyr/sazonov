@@ -182,7 +182,25 @@ describe("the halftone frame", () => {
     for (const [width, height] of [[1200, 800], [1920, 1080], [999, 733]]) {
       const source = { kind: "image" as const, bitmap: {} as ImageBitmap, width, height };
       const raster = sequenceSize(source, settings);
-      expect(raster).toMatchObject(halftoneSize(settings.halftone.width, width, height));
+      expect(raster).toMatchObject(halftoneSize(settings.outputWidth, width, height));
+    }
+  });
+});
+
+describe("output resolution", () => {
+  it("uses the requested width in either mode and keeps both sides even", () => {
+    for (const mode of ["glyph", "halftone"] as const) {
+      const settings = { ...defaultSettings, mode, outputWidth: 2501 };
+      const source = {
+        kind: "image" as const,
+        bitmap: {} as ImageBitmap,
+        width: 1200,
+        height: 801,
+      };
+      const frame = sequenceSize(source, settings);
+      expect(frame.width).toBe(2502);
+      expect(frame.width % 2).toBe(0);
+      expect(frame.height % 2).toBe(0);
     }
   });
 });
