@@ -329,9 +329,17 @@ is always the flat result. The frame is never resized on the way out.
 
 `svg` writes the current frame as editable vector paths, and it means something
 different in each mode. In glyph mode it traces every mark from the same
-measured mask used by the preview, so scanned bitmap marks become contours too.
+measured mask used by the preview, so scanned bitmap marks become outlines too.
 Their fine antialiased fringe becomes a hard edge; use PNG when that fringe
 matters.
+
+The file is plain filled paths. Nothing in it is a reference to be resolved —
+no shared symbols, no mask — because a browser resolves those and a drawing
+program may not, and a file that opens empty in Illustrator or Figma is not an
+export. The cost is that every impression carries its own outline, so a fine
+grid on a wide frame makes a file of about a megabyte. All the impressions of
+one ink arrive as a single path, so an editor gets one object to work with;
+release it into pieces there if you want the marks apart.
 
 In halftone mode nothing is traced. The dots were solved from ink area in the
 first place, so they are written as the curves and polygons they already are —

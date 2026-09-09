@@ -121,9 +121,17 @@ export function Support() {
           </p>
           <p>
             In glyph mode, SVG exports the current frame as editable vector paths. Every
-            mark — including type and bitmap scans — is traced from the measured mask used
-            by the preview. Antialiased fringes become a hard contour; PNG remains the
-            exact raster reference.
+            mark — including type and bitmap scans — is traced into an outline from the
+            measured mask used by the preview. Antialiased fringes become a hard contour;
+            PNG remains the exact raster reference.
+          </p>
+          <p>
+            The file is plain filled paths, with no shared definitions to resolve, so it
+            opens in Illustrator and Figma and not only in a browser. That means each
+            impression carries its own geometry: outlines are traced against the size the
+            mark prints at to keep this in hand, but a fine grid on a wide frame still
+            makes a file of a megabyte or so, and the marks arrive as one path per ink
+            rather than as thousands of separate objects.
           </p>
           <p>
             In halftone mode, SVG is not traced: the dots are solved from ink area as

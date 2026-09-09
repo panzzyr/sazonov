@@ -1162,9 +1162,10 @@ export function App() {
                     + (halftone.separation === "mono"
                       ? "One plate, black on white."
                       : "The plates are set to multiply, the way the inks do.")
-                  : "Exports the current frame as editable vector paths. Scanned and bitmap marks "
-                    + "are traced from the same measured masks used by the preview; fine "
-                    + "antialiasing becomes a hard contour."}
+                  : "Exports the current frame as editable vector paths — one outline per mark, "
+                    + "traced from the same measured masks used by the preview, gathered into one "
+                    + "path per ink. Fine antialiasing becomes a hard contour, and every impression "
+                    + "is written out, so a fine grid makes a large file."}
               </p>
             ) : format === "png" ? (
               <>

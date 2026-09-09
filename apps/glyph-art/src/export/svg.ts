@@ -13,10 +13,64 @@
  * than tracing the rendered canvas. A traced screen would be a picture of a
  * halftone at one resolution; this is the screen itself, and it stays crisp at
  * any size a press asks for.
+ *
+ * **Everything written here is plain filled paths.** No `<use>`, no
+ * `<symbol>`, no `<mask>`: a browser resolves all three and a drawing program
+ * may resolve none of them — Illustrator wants the SVG 1.1 `xlink:href` on a
+ * `<use>`, Figma does not follow the reference at all — and a file that opens
+ * empty in the program it was exported for is not an export. Sharing one
+ * definition between impressions is what those elements buy, so the geometry
+ * is written out per impression instead and `export/trace.ts` earns that back
+ * by making each outline small.
+ *
+ * One path per ink, not one per mark: a frame is thousands of impressions, and
+ * an editor that is handed thousands of objects crawls. Overlapping marks
+ * inside one path merge under `nonzero`, which is the same union the canvas
+ * renderer builds in alpha.
  */
 
 import { glyphPlacements, type RenderOptions } from "../engine/render";
 import { solveRamp } from "../engine/ramp";
+import { simplifyContour, traceContours, type Point } from "./trace";
+import type { MeasuredGlyph } from "../engine/glyphLibrary";
+
+/**
+ * How far an outline may stray from the mask, in pixels of the finished frame.
+ *
+ * Half a pixel is the width of the antialiased fringe the trace throws away in
+ * the first place, so at full size the traced frame and the PNG show the same
+ * edge. It is also the whole file: a frame is thousands of impressions and the
+ * geometry of each one is written out, so every point kept is paid for
+ * thousands of times.
+ */
+const pageTolerance = 0.5;
+
+/**
+ * Mask pixels traced per pixel the impression prints at.
+ *
+ * Above the printed size, so the ragged edge of a scan survives; not far above
+ * it, because detail finer than the page can show is only a bill.
+ */
+const traceDetail = 1.5;
+
+/** Below this an impression is a few pixels wide and has nothing left to lose. */
+const minTraceWidth = 24;
+
+/** Ink smaller than a pixel of the page is fringe, not a mark. */
+const minContourArea = 1;
+
+type Outline = { width: number; height: number; contours: Point[][] };
+
+/** Twice the signed area, positive for an outer contour. */
+function doubleArea(points: Point[]) {
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[(index + 1) % points.length];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return sum;
+}
 import {
   dotOutline,
   plateColors,
@@ -28,8 +82,6 @@ import {
 } from "../engine/halftone";
 import type { Settings } from "../types";
 import type { ToneField } from "../engine/tone";
-
-const traceThreshold = 32;
 
 function decimal(value: number, digits = 3) {
   return Number(value.toFixed(digits)).toString();
@@ -43,53 +95,51 @@ function xml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-type Rectangle = { x: number; y: number; width: number; height: number };
-
 /**
- * Traces a measured alpha mask into vertically merged pixel runs.
+ * The outline of one mark, in the pixels it is traced at.
  *
- * The measured mask is the canonical form used by the canvas renderer for
- * shipped vectors, type, and scanned marks alike. Tracing that form means the
- * SVG preserves the same tight box and ink decision instead of quietly using a
- * different interpretation of an uploaded file.
+ * Not the mask's 256 px: an impression prints at thirty-odd pixels, and every
+ * lattice step finer than that is detail the page cannot show but the file
+ * still pays for — once per impression, now that the geometry is written out
+ * rather than shared. So the mask is resampled to twice the printed size,
+ * which keeps the ragged edge of a scan and drops the wobble underneath it,
+ * and then simplified to a third of a page pixel.
+ *
+ * Sizes are bucketed, so a band — where every impression is the same size —
+ * traces once and the rest is arithmetic.
  */
-export function traceAlpha(alpha: Uint8ClampedArray, width: number, height: number) {
-  const rectangles: Rectangle[] = [];
-  let active = new Map<string, Rectangle>();
+function markOutline(glyph: MeasuredGlyph, printedWidth: number, cache: Map<string, Outline>) {
+  const bitmap = glyph.bitmap;
+  const wanted = Math.max(minTraceWidth, Math.round((printedWidth * traceDetail) / 8) * 8);
+  const traceWidth = Math.min(bitmap.width, wanted);
+  const id = `${glyph.spec.id}:${traceWidth}`;
+  const hit = cache.get(id);
+  if (hit) return hit;
 
-  for (let y = 0; y < height; y += 1) {
-    const next = new Map<string, Rectangle>();
-    let x = 0;
-    while (x < width) {
-      while (x < width && alpha[y * width + x] < traceThreshold) x += 1;
-      const start = x;
-      while (x < width && alpha[y * width + x] >= traceThreshold) x += 1;
-      if (x === start) continue;
-      const key = `${start}:${x}`;
-      const rectangle = active.get(key) ?? { x: start, y, width: x - start, height: 0 };
-      rectangle.height += 1;
-      next.set(key, rectangle);
-    }
-    for (const [key, rectangle] of active) {
-      if (!next.has(key)) rectangles.push(rectangle);
-    }
-    active = next;
-  }
-  rectangles.push(...active.values());
-
-  return rectangles
-    .map((rectangle) => `M${rectangle.x} ${rectangle.y}h${rectangle.width}v${rectangle.height}h-${rectangle.width}z`)
-    .join("");
-}
-
-export function traceMask(bitmap: HTMLCanvasElement) {
-  const context = bitmap.getContext("2d", { willReadFrequently: true });
+  const traceHeight = Math.max(1, Math.round((bitmap.height * traceWidth) / bitmap.width));
+  const scratch = document.createElement("canvas");
+  scratch.width = traceWidth;
+  scratch.height = traceHeight;
+  const context = scratch.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("This browser did not give us a 2D canvas.");
-  const { width, height } = bitmap;
-  const pixels = context.getImageData(0, 0, width, height).data;
-  const alpha = new Uint8ClampedArray(width * height);
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, traceWidth, traceHeight);
+
+  const pixels = context.getImageData(0, 0, traceWidth, traceHeight).data;
+  const alpha = new Uint8ClampedArray(traceWidth * traceHeight);
   for (let index = 0; index < alpha.length; index += 1) alpha[index] = pixels[index * 4 + 3];
-  return traceAlpha(alpha, width, height);
+
+  const perPagePixel = traceWidth / Math.max(1, printedWidth);
+  const smallest = minContourArea * perPagePixel * perPagePixel * 2;
+  const outline: Outline = {
+    width: traceWidth,
+    height: traceHeight,
+    contours: traceContours(alpha, traceWidth, traceHeight)
+      .map((contour) => simplifyContour(contour, pageTolerance * perPagePixel))
+      .filter((contour) => Math.abs(doubleArea(contour)) >= smallest),
+  };
+  cache.set(id, outline);
+  return outline;
 }
 
 function rgb(red: number, green: number, blue: number, invert: boolean) {
@@ -123,50 +173,88 @@ function svgDocument(size: Frame, title: string, description: string, body: stri
   ].join("");
 }
 
-/** The traced glyph frame: one symbol per mark, placed by the renderer's own geometry. */
+/**
+ * The traced glyph frame: every impression written out, gathered by ink.
+ *
+ * Each mark's outline is traced once per printed size and then carried into
+ * place by hand — scaled to the impression's box and rotated about its centre
+ * — because a shared definition would mean the `<use>` that editors refuse.
+ *
+ * In source-colour mode a mark takes the colour of the cell it belongs to,
+ * where the canvas paints per-cell colour through the mask and a mark spilling
+ * over a border picks up its neighbour's colour along the way. One mark, one
+ * ink is what an editor can work with, and it is the tint the mark was sized
+ * for in the first place.
+ */
 function glyphBody(options: SvgOptions) {
   const { settings, field, library, size } = options;
   const ramp = options.ramp ?? solveRamp(settings, library.metrics);
   const cell = size.width / field.gridW;
-  const placements = [...glyphPlacements({ ...options, ink: "flat", ramp }, ramp, cell)];
-  const used = [...new Set(placements.map((placement) => placement.glyph.spec.id))];
-  const symbolIds = new Map(used.map((id, index) => [id, `mark-${index}`]));
-
-  const symbols = used.map((id) => {
-    const glyph = library.get(id);
-    if (!glyph) return "";
-    const path = traceMask(glyph.bitmap);
-    return `<symbol id="${symbolIds.get(id)}" viewBox="0 0 ${glyph.bitmap.width} ${glyph.bitmap.height}"><path d="${path}"/></symbol>`;
-  }).join("");
-
-  const marks = placements.map((placement) => {
-    const x = placement.centreX - placement.width / 2;
-    const y = placement.centreY - placement.height / 2;
-    const rotation = placement.rotation === 0
-      ? ""
-      : ` transform="rotate(${decimal((placement.rotation * 180) / Math.PI)} ${decimal(placement.centreX)} ${decimal(placement.centreY)})"`;
-    return `<use href="#${symbolIds.get(placement.glyph.spec.id)}" x="${decimal(x)}" y="${decimal(y)}" width="${decimal(placement.width)}" height="${decimal(placement.height)}"${rotation}/>`;
-  }).join("");
-
-  const ink = settings.invert ? "#ffffff" : "#000000";
   const paper = settings.invert ? "#000000" : "#ffffff";
-  let colour = `<rect width="${size.width}" height="${size.height}" fill="${ink}"/>`;
-  if (settings.colorMode === "source") {
-    const cells: string[] = [];
-    for (let index = 0; index < field.gridW * field.gridH; index += 1) {
-      const x = (index % field.gridW) * cell;
-      const y = Math.floor(index / field.gridW) * cell;
-      const offset = index * 3;
-      cells.push(`<rect x="${decimal(x)}" y="${decimal(y)}" width="${decimal(cell + 0.02)}" height="${decimal(cell + 0.02)}" fill="${rgb(field.color[offset], field.color[offset + 1], field.color[offset + 2], settings.invert)}"/>`);
-    }
-    colour = cells.join("");
+  const cache = new Map<string, Outline>();
+  const inks = new Map<string, string[]>();
+
+  for (const placement of glyphPlacements({ ...options, ink: "flat", ramp }, ramp, cell)) {
+    const { glyph, width, height, centreX, centreY, rotation } = placement;
+    const outline = markOutline(glyph, width, cache);
+    if (outline.contours.length === 0) continue;
+
+    // The impression's own transform, applied to the points rather than
+    // written as an attribute: a transform on a shared path is a `<use>` by
+    // another name, and one path per ink can only carry one of them.
+    const scaleX = width / outline.width;
+    const scaleY = height / outline.height;
+    const left = centreX - width / 2;
+    const top = centreY - height / 2;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const place = (point: Point): Point => {
+      const x = left + point[0] * scaleX;
+      const y = top + point[1] * scaleY;
+      if (rotation === 0) return [x, y];
+      const dx = x - centreX;
+      const dy = y - centreY;
+      return [centreX + dx * cos - dy * sin, centreY + dx * sin + dy * cos];
+    };
+
+    // Relative lines, because the numbers are then the length of a step and
+    // not the position of one: a step is a couple of pixels where a position
+    // is four digits, and a frame holds hundreds of thousands of them.
+    const data = outline.contours.map((contour) => {
+      const start = place(contour[0]);
+      // A tenth of a pixel, and the step is measured from the point that was
+      // actually written rather than from the exact one: rounding then lands
+      // every vertex within that tenth instead of drifting along the contour.
+      let written: Point = [Number(start[0].toFixed(1)), Number(start[1].toFixed(1))];
+      let run = `M${decimal(written[0], 1)} ${decimal(written[1], 1)}`;
+      for (let index = 1; index < contour.length; index += 1) {
+        const point = place(contour[index]);
+        const dx = Number((point[0] - written[0]).toFixed(1));
+        const dy = Number((point[1] - written[1]).toFixed(1));
+        if (dx === 0 && dy === 0) continue;
+        run += `l${decimal(dx, 1)} ${decimal(dy, 1)}`;
+        written = [written[0] + dx, written[1] + dy];
+      }
+      return `${run}Z`;
+    }).join("");
+
+    const ink = settings.colorMode === "source"
+      ? rgb(
+        field.color[placement.cellIndex * 3],
+        field.color[placement.cellIndex * 3 + 1],
+        field.color[placement.cellIndex * 3 + 2],
+        settings.invert,
+      )
+      : (settings.invert ? "#ffffff" : "#000000");
+    const bucket = inks.get(ink);
+    if (bucket) bucket.push(data);
+    else inks.set(ink, [data]);
   }
 
-  return [
-    `<defs>${symbols}<mask id="marks" maskUnits="userSpaceOnUse" x="0" y="0" width="${size.width}" height="${size.height}"><g fill="#fff">${marks}</g></mask></defs>`,
-    `<rect width="${size.width}" height="${size.height}" fill="${paper}"/>`,
-    `<g mask="url(#marks)">${colour}</g>`,
-  ].join("");
+  const paths = [...inks].map(([ink, data], index) =>
+    `<path id="ink-${index}" fill="${ink}" d="${data.join("")}"/>`).join("");
+
+  return `<rect width="${size.width}" height="${size.height}" fill="${paper}"/>${paths}`;
 }
 
 /**

@@ -1,5 +1,23 @@
 # Architecture decisions
 
+## 2026-09-10 — glyph art writes the SVG as plain paths, and traces at print size
+
+- **Decision:** Drop `<symbol>`/`<use>`/`<mask>` from the glyph export. Trace each
+  mark into contours (marching squares, Douglas–Peucker), write every impression's
+  geometry out, and gather impressions into one path per ink, filled `nonzero`.
+- **Alternatives:** Keep the shared symbols and add `xlink:href` for Illustrator;
+  export a raster fallback; keep merged pixel runs as the geometry.
+- **Reason:** A file that renders in Chrome and opens empty in Illustrator and
+  Figma is not an export. Those three elements are exactly what the editors do not
+  resolve, and they were only there to let impressions share a definition.
+- **Consequences:** Geometry is written per impression, so it has to be small:
+  the mask is resampled to 1.5× the printed size before tracing, simplified to
+  half a page pixel, and written as relative steps at a tenth of a pixel measured
+  from the last step written. A frame of the scanned presets lands near 1 MB
+  against 0.4 MB shared — larger, and openable. One path per ink keeps an editor
+  from being handed thousands of objects; contour winding, not `evenodd`, is what
+  lets overlapping marks merge while holes stay open.
+
 ## 2026-09-09 — glyph art writes a halftone SVG from the dot solve, not by tracing
 
 - **Decision:** Extend SVG export to halftone mode by sharing the lattice walk and

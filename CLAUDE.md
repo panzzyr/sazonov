@@ -297,12 +297,22 @@ only its CSS dimensions, so there is still no proxy and none of printor's
 Every slider is paired with a commit-on-blur number field in `RangeControl.tsx`.
 SVG exports the current frame in both modes, and `export/svg.ts` draws each one
 the way it was made. A glyph frame is *traced*: the same placements as the canvas
-renderer, with each measured alpha mask turned into merged vector runs. A
-halftone frame is not — its dots were solved from area as shapes, so
-`engine/halftone.ts` hands out the same lattice walk (`screenDots`) and the same
-geometry (`dotOutline`, through a `DotSink`) it fills into a `Path2D`, and each
-plate becomes one path in its own ink. PNG remains the antialiased raster
-reference.
+renderer, with each measured alpha mask turned into contours by `export/trace.ts`
+(marching squares, then Douglas–Peucker). A halftone frame is not — its dots were
+solved from area as shapes, so `engine/halftone.ts` hands out the same lattice
+walk (`screenDots`) and the same geometry (`dotOutline`, through a `DotSink`) it
+fills into a `Path2D`, and each plate becomes one path in its own ink. PNG
+remains the antialiased raster reference.
+
+**The SVG is plain filled paths — no `<use>`, `<symbol>` or `<mask>`.** Sharing
+one definition between impressions is what those elements are for, and it is
+also what makes a file a browser renders and a drawing program opens empty:
+Illustrator wants SVG 1.1's `xlink:href`, Figma does not follow the reference at
+all. So every impression is written out, `trace.ts` earns that back by tracing
+against the size the mark actually prints at (`traceDetail`, `pageTolerance`),
+and the impressions are gathered into one path per ink — thousands of objects
+are what make an editor crawl. Marks overlap, so a path is filled `nonzero` and
+outer contours and holes are wound against each other.
 
 Same determinism rule as printor: no `Math.random()`, reroll advances the seed
 with an LCG, `tests/privacy.test.ts` greps for both.
