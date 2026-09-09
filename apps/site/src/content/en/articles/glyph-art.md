@@ -336,10 +336,12 @@ matters.
 The file is plain filled paths. Nothing in it is a reference to be resolved —
 no shared symbols, no mask — because a browser resolves those and a drawing
 program may not, and a file that opens empty in Illustrator or Figma is not an
-export. The cost is that every impression carries its own outline, so a fine
-grid on a wide frame makes a file of about a megabyte. All the impressions of
-one ink arrive as a single path, so an editor gets one object to work with;
-release it into pieces there if you want the marks apart.
+export. The cost is that every impression carries its own outline, which is why
+those outlines are fitted with curves: a stamped dot stays round and a punched
+corner stays square, for a fraction of the points a polygon would need to do
+either. Even so, a fine grid on a wide frame makes a file of about a megabyte.
+All the impressions of one ink arrive as a single path, so an editor gets one
+object to work with; release it into pieces there if you want the marks apart.
 
 In halftone mode nothing is traced. The dots were solved from ink area in the
 first place, so they are written as the curves and polygons they already are —

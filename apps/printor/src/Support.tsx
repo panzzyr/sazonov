@@ -65,6 +65,12 @@ export function Support() {
         <section>
           <h2>Limits</h2>
           <p>
+            The footer shows the build in this tab — the version and the commit it was
+            made from. The tool keeps itself available offline, so if a fix is missing,
+            check the stamp before anything else: a reload with the cache bypassed
+            (shift-click reload) replaces it.
+          </p>
+          <p>
             Export stops at {MAX_EXPORT_FRAMES} frames. Sources above 1080p work,
             but a full-resolution export can use a lot of memory.
           </p>

@@ -93,6 +93,11 @@ them for a root domain. Anything referencing an asset at runtime must go through
 deployment. Adding a tool means adding a row to `nest-tools.mjs`, an entry to
 `apps/site/src/_data/tools.js`, and a build step to the root `build` script.
 
+**Build stamp.** Each tool's `vite.config.ts` defines `__BUILD__` as
+`version·commit` and the shell footer prints it, so a page can be told apart
+from the stale one a service worker may have served. `git` missing is not an
+error; the stamp says `local`.
+
 **Theme.** Three states — light, dark, system — shared across four documents on
 one origin. The contract is one localStorage key, `sazonov-theme`, and one
 attribute, `data-theme` on `<html>`; "system" stores nothing and stamps nothing.
@@ -308,11 +313,21 @@ remains the antialiased raster reference.
 one definition between impressions is what those elements are for, and it is
 also what makes a file a browser renders and a drawing program opens empty:
 Illustrator wants SVG 1.1's `xlink:href`, Figma does not follow the reference at
-all. So every impression is written out, `trace.ts` earns that back by tracing
-against the size the mark actually prints at (`traceDetail`, `pageTolerance`),
-and the impressions are gathered into one path per ink — thousands of objects
-are what make an editor crawl. Marks overlap, so a path is filled `nonzero` and
-outer contours and holes are wound against each other.
+all. So every impression is written out, and the impressions are gathered into
+one path per ink — thousands of objects are what make an editor crawl. Marks
+overlap, so a path is filled `nonzero` and outer contours and holes are wound
+against each other.
+
+**`trace.ts` earns that back with curves, not with a coarser polygon.** The
+tolerance is a share of the mark's printed size (`toleranceOfSize`), because
+half a pixel off a forty-pixel mark is nothing and half a pixel off a ten-pixel
+dot is an octagon. The walk is: trace the lattice → find the corners on a
+Douglas–Peucker outline of it (a raw contour turns a right angle at every step,
+so asking it directly answers "everywhere") → ease the staircase off each run
+between corners → fit cubics, splitting on error. A run that a line or two
+already covers within tolerance stays lines, which is most of a scanned edge;
+that question is asked of a whole run only, never of the halves a split makes,
+or a circle comes back a polygon one half at a time.
 
 Same determinism rule as printor: no `Math.random()`, reroll advances the seed
 with an LCG, `tests/privacy.test.ts` greps for both.

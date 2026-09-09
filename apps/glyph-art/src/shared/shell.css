@@ -70,6 +70,10 @@
   color: inherit;
 }
 
+.tool-build {
+  opacity: .7;
+}
+
 @media (max-width: 42rem) {
   .tool-header {
     grid-template-columns: auto 1fr;

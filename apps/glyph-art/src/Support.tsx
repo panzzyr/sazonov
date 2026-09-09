@@ -128,10 +128,12 @@ export function Support() {
           <p>
             The file is plain filled paths, with no shared definitions to resolve, so it
             opens in Illustrator and Figma and not only in a browser. That means each
-            impression carries its own geometry: outlines are traced against the size the
-            mark prints at to keep this in hand, but a fine grid on a wide frame still
-            makes a file of a megabyte or so, and the marks arrive as one path per ink
-            rather than as thousands of separate objects.
+            impression carries its own geometry, so the outlines are fitted with curves
+            rather than with a dense polygon — a stamped dot stays round and a punched
+            corner stays square, at a fraction of the points either would cost. Even so, a
+            fine grid on a wide frame makes a file of a megabyte or so. The marks arrive as
+            one path per ink rather than as thousands of separate objects; release it into
+            pieces in the editor if you want them apart.
           </p>
           <p>
             In halftone mode, SVG is not traced: the dots are solved from ink area as
@@ -143,6 +145,12 @@ export function Support() {
 
         <section>
           <h2>Limits</h2>
+          <p>
+            The footer shows the build in this tab — the version and the commit it was
+            made from. The tool keeps itself available offline, so if a fix is missing,
+            check the stamp before anything else: a reload with the cache bypassed
+            (shift-click reload) replaces it.
+          </p>
           <p>
             Export stops at {MAX_EXPORT_FRAMES} frames. Below about eight pixels per cell
             the marks stop reading as marks; the panel says so when you get there.

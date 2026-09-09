@@ -31,35 +31,40 @@
 
 import { glyphPlacements, type RenderOptions } from "../engine/render";
 import { solveRamp } from "../engine/ramp";
-import { simplifyContour, traceContours, type Point } from "./trace";
+import { fitContour, traceContours, type Point, type Segment } from "./trace";
 import type { MeasuredGlyph } from "../engine/glyphLibrary";
 
 /**
- * How far an outline may stray from the mask, in pixels of the finished frame.
+ * How far an outline may stray from the mask, as a share of the mark's size.
  *
- * Half a pixel is the width of the antialiased fringe the trace throws away in
- * the first place, so at full size the traced frame and the PNG show the same
- * edge. It is also the whole file: a frame is thousands of impressions and the
- * geometry of each one is written out, so every point kept is paid for
- * thousands of times.
+ * Relative, not absolute, because that is how the error is seen: half a pixel
+ * off a forty-pixel mark is nothing, and half a pixel off a ten-pixel dot is
+ * the difference between a dot and an octagon. The floor and the ceiling are
+ * in pixels of the finished frame — under the floor there is nothing left to
+ * resolve, and over the ceiling the shape stops being the shape.
  */
-const pageTolerance = 0.5;
+const toleranceOfSize = 0.02;
+const minTolerance = 0.06;
+const maxTolerance = 0.5;
 
 /**
  * Mask pixels traced per pixel the impression prints at.
  *
- * Above the printed size, so the ragged edge of a scan survives; not far above
- * it, because detail finer than the page can show is only a bill.
+ * Above the printed size, so the ragged edge of a scan survives — the lattice
+ * is what the fitted curve has to work from, and it cannot describe an edge
+ * finer than its own step. Tracing costs nothing in the file: a curve covers
+ * as many traced points as it likes.
  */
-const traceDetail = 1.5;
+const traceDetail = 2.5;
 
-/** Below this an impression is a few pixels wide and has nothing left to lose. */
-const minTraceWidth = 24;
+/** No mark is traced coarser than this, however small it prints. */
+const minTraceWidth = 48;
 
 /** Ink smaller than a pixel of the page is fringe, not a mark. */
 const minContourArea = 1;
 
-type Outline = { width: number; height: number; contours: Point[][] };
+type Fitted = { start: Point; segments: Segment[] };
+type Outline = { width: number; height: number; contours: Fitted[] };
 
 /** Twice the signed area, positive for an outer contour. */
 function doubleArea(points: Point[]) {
@@ -131,12 +136,16 @@ function markOutline(glyph: MeasuredGlyph, printedWidth: number, cache: Map<stri
 
   const perPagePixel = traceWidth / Math.max(1, printedWidth);
   const smallest = minContourArea * perPagePixel * perPagePixel * 2;
+  const tolerance = Math.max(
+    minTolerance,
+    Math.min(maxTolerance, toleranceOfSize * printedWidth),
+  ) * perPagePixel;
   const outline: Outline = {
     width: traceWidth,
     height: traceHeight,
     contours: traceContours(alpha, traceWidth, traceHeight)
-      .map((contour) => simplifyContour(contour, pageTolerance * perPagePixel))
-      .filter((contour) => Math.abs(doubleArea(contour)) >= smallest),
+      .filter((contour) => Math.abs(doubleArea(contour)) >= smallest)
+      .map((contour) => fitContour(contour, tolerance)),
   };
   cache.set(id, outline);
   return outline;
@@ -220,20 +229,31 @@ function glyphBody(options: SvgOptions) {
     // Relative lines, because the numbers are then the length of a step and
     // not the position of one: a step is a couple of pixels where a position
     // is four digits, and a frame holds hundreds of thousands of them.
-    const data = outline.contours.map((contour) => {
-      const start = place(contour[0]);
-      // A tenth of a pixel, and the step is measured from the point that was
+    const data = outline.contours.map(({ start, segments }) => {
+      const head = place(start);
+      // A tenth of a pixel, and every step is measured from the point that was
       // actually written rather than from the exact one: rounding then lands
-      // every vertex within that tenth instead of drifting along the contour.
-      let written: Point = [Number(start[0].toFixed(1)), Number(start[1].toFixed(1))];
+      // each vertex within that tenth instead of drifting along the contour.
+      let written: Point = [Number(head[0].toFixed(1)), Number(head[1].toFixed(1))];
       let run = `M${decimal(written[0], 1)} ${decimal(written[1], 1)}`;
-      for (let index = 1; index < contour.length; index += 1) {
-        const point = place(contour[index]);
-        const dx = Number((point[0] - written[0]).toFixed(1));
-        const dy = Number((point[1] - written[1]).toFixed(1));
-        if (dx === 0 && dy === 0) continue;
-        run += `l${decimal(dx, 1)} ${decimal(dy, 1)}`;
-        written = [written[0] + dx, written[1] + dy];
+      const step = (point: Point): Point => {
+        const at = place(point);
+        return [Number((at[0] - written[0]).toFixed(1)), Number((at[1] - written[1]).toFixed(1))];
+      };
+
+      for (const segment of segments) {
+        const end = step(segment.to);
+        if (segment.kind === "line") {
+          if (end[0] === 0 && end[1] === 0) continue;
+          run += `l${decimal(end[0], 1)} ${decimal(end[1], 1)}`;
+        } else {
+          const first = step(segment.first);
+          const second = step(segment.second);
+          run += `c${decimal(first[0], 1)} ${decimal(first[1], 1)}`
+            + ` ${decimal(second[0], 1)} ${decimal(second[1], 1)}`
+            + ` ${decimal(end[0], 1)} ${decimal(end[1], 1)}`;
+        }
+        written = [written[0] + end[0], written[1] + end[1]];
       }
       return `${run}Z`;
     }).join("");

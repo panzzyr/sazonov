@@ -1,5 +1,36 @@
 # Architecture decisions
 
+## 2026-09-10 — glyph art fits curves to the traced outlines
+
+- **Decision:** Fit cubic Béziers to each traced contour, cutting it at detected
+  corners first, and keep straight runs as lines. The tolerance is a share of the
+  mark's printed size rather than a fixed number of page pixels.
+- **Alternatives:** A finer polygon everywhere (heavier for the same look); keep
+  the coarse polygon (circles print as octagons, punched corners come out
+  chamfered); trace the shipped set's original SVG geometry instead of its mask.
+- **Reason:** Every impression's geometry is written out, so points are paid for
+  thousands of times — a polygon has to choose between faceted circles and a large
+  file, and a curve does not. Tracing the mask stays the one canonical shape for
+  scanned, typed, uploaded and shipped marks alike.
+- **Consequences:** The shipped set exports smaller than the polygon it replaced
+  (0.40 MB against 0.43 MB) and the scanned presets larger (1.3 MB against 1.1 MB),
+  both with round marks and sharp corners. Corners are found on a simplified
+  outline and require an edge on both sides; the lines-are-cheaper test is asked
+  of a whole run only, never of the halves a split makes.
+
+## 2026-09-10 — the tool shell prints the build it is running
+
+- **Decision:** `vite.config.ts` in each tool defines `__BUILD__` as the package
+  version and the short commit, and the shell footer shows it.
+- **Alternatives:** A version alone; nothing, and read the asset hash from the
+  network panel.
+- **Reason:** Both tools register a service worker in production, so the page in
+  front of you is not necessarily the page that was deployed. The commit is what
+  answers "is this the build I just pushed".
+- **Consequences:** `src/shared/Shell.tsx` and `shell.css` change in both tools,
+  byte-identical as always, and both Vite configs carry the define. A build with
+  no git available stamps `local` rather than failing.
+
 ## 2026-09-10 — glyph art writes the SVG as plain paths, and traces at print size
 
 - **Decision:** Drop `<symbol>`/`<use>`/`<mask>` from the glyph export. Trace each

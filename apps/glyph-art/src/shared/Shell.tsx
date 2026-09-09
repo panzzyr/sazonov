@@ -45,6 +45,10 @@ export function ToolShell({ children, name, support = false }: ToolShellProps) {
       </header>
       {children}
       <footer className="tool-footer">
+        {/* Which build is in front of you. A tool that caches itself for
+            offline use can hand back an old one, and then the only way to
+            tell it apart from the new one is to be told. */}
+        <span className="tool-build" title="Build loaded in this tab">{__BUILD__}</span>
         <a href="https://sazonov.space">sazonov.space ↗</a>
       </footer>
     </div>
