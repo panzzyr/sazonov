@@ -11,6 +11,7 @@ import {
   maxBands,
   maxGrid,
   maxOutputWidth,
+  maxSpacing,
   minBands,
   minGrid,
   minOutputWidth,
@@ -194,5 +195,19 @@ describe("loading a set of marks", () => {
   it("drops hand-set sizes so the new marks are solved from the curve", () => {
     const settings = spread(3, 7);
     expect(settings.bands.every((band) => band.size === null)).toBe(true);
+  });
+});
+
+describe("spacing in a saved project", () => {
+  it("defaults to none and clamps into range", () => {
+    expect(parseSettings({}).spacing).toEqual({ x: 0, y: 0 });
+    expect(parseSettings({ spacing: { x: 9, y: -1 } }).spacing).toEqual({ x: maxSpacing, y: 0 });
+    expect(parseSettings({ spacing: "wide" }).spacing).toEqual({ x: 0, y: 0 });
+  });
+
+  it("survives a share link", () => {
+    const settings = initialSettings();
+    settings.spacing = { x: 0.5, y: 1 };
+    expect(decodeSettings(encodeSettings(settings)).spacing).toEqual({ x: 0.5, y: 1 });
   });
 });

@@ -31,7 +31,7 @@ pnpm --filter @sazonov/printor exec vitest run -t "deterministic"
 pnpm --filter @sazonov/printor lint              # generates textures, then tsc --noEmit
 node --test tests/site.test.mjs                  # single site test file (needs a site build)
 pnpm build:drafts                                # site build including draft: true content
-node scripts/harvest-glyphs.mjs <set> <page.png>  # cut a scanned page into candidate marks
+node scripts/harvest-glyphs.mjs <set> <page.png>  # cut scanned pages into assets/glyph-presets/<set>/harvested/
 node scripts/build-glyph-presets.mjs             # rebuild the preset marks (needs assets/)
 node scripts/build-glyph-presets.mjs --sheet out # ...and print a proof sheet of every ladder
 SITE_URL=https://preview.example.com pnpm build  # override production origin
@@ -47,9 +47,10 @@ These fail the build, not just a lint warning:
 - `apps/printor/scripts/budget.mjs` and `apps/glyph-art/scripts/budget.mjs` — each
   tool's `dist/assets/*.{js,css}` must stay under 300 KB gzip, and its
   `dist/index.html` must still contain `connect-src 'none'`. glyph art's also
-  caps `dist/presets/` at **160 KB per set** — a set is fetched only when it is
-  picked, so that is what a visitor downloads — and **512 KB in total**, which is
-  what the repository carries.
+  caps `dist/presets/` at **2.75 MB per set** — a set is fetched only when it is
+  picked, so that is what a visitor downloads; 1812, which prints every one of
+  its nearly three thousand marks, is about 2.5 MB and the hand-picked sets are
+  tens of KB — and **3 MB in total**, which is what the repository carries.
 - `tests/privacy.test.ts` in **both** tools — `public/_headers` and `index.html`
   must keep `connect-src 'none'`, and no file under `src/` may contain
   `fetch`/`XMLHttpRequest`/`WebSocket`/`sendBeacon`/`EventSource` or
@@ -58,8 +59,8 @@ These fail the build, not just a lint warning:
 
 All three apps are static and client-only: no endpoints, no telemetry, no remote
 assets, no uploads. Adding any of those breaks the CSP tests. glyph art's preset
-marks are the one thing loaded after the bundle, and they are same-origin images
-under `img-src 'self'`, fetched by `<img>` — never by `fetch`.
+sprite sheets are the one thing loaded after the bundle, and they are same-origin
+images under `img-src 'self'`, fetched by `<img>` — never by `fetch`.
 
 ## Repository layout
 
@@ -112,8 +113,9 @@ attribute means changing all of them.
 | `apps/site/src/_includes/generated/styles.css` | `scripts/build-css.mjs` (lightningcss) | `packages/tokens/tokens.css` + `apps/site/src/site.css` |
 | `apps/printor/src/generatedTextures.ts` | `apps/printor/scripts/generate-texture-library.mjs` | `apps/printor/public/textures/manifest.json` |
 | `apps/glyph-art/src/generatedPresets.ts` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` (scans, not in git) |
+| `apps/glyph-art/src/generatedPresetMetrics.ts` | `scripts/build-glyph-presets.mjs` | the same; imported by tests only |
 | `apps/glyph-art/public/presets/` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` |
-| `assets/glyph-presets/eighteen-twelve-press/` | `scripts/harvest-glyphs.mjs` | `assets/glyph-pages/` (scanned pages, not in git) |
+| `assets/glyph-presets/<set>/harvested/` | `scripts/harvest-glyphs.mjs` | `assets/glyph-pages/<set>/` (scanned pages, not in git) |
 | `apps/printor/public/textures/` | `scripts/build-texture-library.mjs` | `assets/` (full-resolution scans, not in git) |
 | `apps/site/_site/` | `eleventy` + `scripts/postbuild.mjs` | site sources |
 | `apps/printor/dist/` | `vite build` + `apps/printor/scripts/postbuild.mjs` | printor sources |
@@ -133,11 +135,13 @@ those before committing, because no table shows whether a ladder steps.
 
 `harvest-glyphs.mjs` runs *before* it, and only for sets cut out of whole pages.
 It labels connected islands of alpha on a background-removed scan and writes each
-one as a candidate mark, in the same shape a hand-picked scan arrives in — so the
-builder cannot tell the difference. A page yields hundreds to thousands of
-candidates and a ladder uses about a hundred; the builder chooses, and writes a
-WebP only for the marks a level names. **`docs/harvesting-marks.md` is the full
-walkthrough** — read it before touching either script.
+one as a candidate mark into `assets/glyph-presets/<set>/harvested/` — the only
+directory it wipes — in the same shape a hand-picked scan arrives in, so the
+builder cannot tell the difference and hand-picked scans can sit beside it. The
+builder packs each set onto sprite sheets (`public/presets/<set>/sheet-N.webp`),
+re-measures every mark off the sheets it wrote, and solves the ramp on those
+numbers, so a lossy sheet and the browser agree exactly. **`docs/harvesting-marks.md`
+is the full walkthrough** — read it before touching either script.
 
 ## printor architecture
 
@@ -218,9 +222,10 @@ density  ρ = measured ink fraction of the mark's tight box
 size     s = sqrt( c / (ρ · min(a, 1/a)) )   long side, in cell units
 ```
 
-Every mark — shipped SVG, typed character, uploaded file — is rasterized to
-256 px and measured for ρ and aspect by the same code, because the solver cannot
-run without ρ. See `docs/decisions.md`.
+Every mark — shipped SVG, typed character, uploaded file, preset scan — is
+measured for ρ and aspect by the same rule, because the solver cannot run
+without ρ. Loose marks are rasterized to 256 px first; preset marks are measured
+at the pixels they ship at, as boxes on their set's sheet. See `docs/decisions.md`.
 
 Data flow:
 
@@ -228,7 +233,9 @@ Data flow:
 - `src/engine/marks.ts` — the shipped `press` set as inline SVG. Densities are
   never hard-coded; they are measured like everything else.
 - `src/engine/glyphLibrary.ts` — rasterize, measure ink (`alpha × (1 − luma)`),
-  tight-box, cache. Loads through `<img>` and `FileReader`, never fetch.
+  tight-box, cache. Loads through `<img>` and `FileReader`, never fetch. A
+  preset sheet becomes one shared ink mask and each of its marks a `box` on it,
+  so every draw goes through `drawGlyph`, never `drawImage(glyph.bitmap, …)`.
 - `src/engine/tone.ts` — box-average **in linear light**, band in **L\***,
   auto-levels from the 1st/99th percentile of the cell tones. Pure except for
   `sampleSource`.
@@ -267,31 +274,46 @@ darkest band asks for and `maxSize` is how far a mark may spill past its cell
 darkest band alone leaves a sparse mark mid-ladder clamped, which is the failure
 `fit ramp` exists to prevent.
 
-**Presets are generated.** `generatedPresets.ts` carries five sets of scanned
-period marks and the twelve-level ladder solved for each, plus the ink density
-and proportion measured at build time. Four are hand-picked; `1812 press` is cut
-whole out of four newspaper pages by `harvest-glyphs.mjs`, which is why it is
-the only set deep enough to fill a level to the twelve-mark cap. Those measured
-numbers are for tests and documentation only — the browser re-measures every
-mark on load and *that* is what the renderer uses; the two agree to a fraction
-of a percent, not exactly, because the browser re-rasterizes to 256 px first.
+**Presets are generated.** `generatedPresets.ts` carries four sets of scanned
+period marks — 18th century, 1812 · Patriotic War, 1914 · First World War,
+1941 · Great Patriotic War — compactly: each set's sheets, every mark's box on
+them, and the twelve-level ladder as indices. Three are hand-picked. 1812 is
+its hand-picked scans plus the whole case of type `harvest-glyphs.mjs` cut out
+of four newspaper pages, and it prints **every** mark — 2880, dealt densest to
+darkest, about 260 to a level. The build's measured density and proportion
+live in `generatedPresetMetrics.ts`, which only the tests import; the browser
+measures every mark again on load, off the same shipped pixels, and gets the
+same numbers.
 
-`src/presets.ts` is the hand-written part: applying a preset changes the marks,
-the band count, `peak` and `maxSize`, and deliberately nothing about the
-picture. `projectState.ts` accepts a preset mark by **id membership** in
-`presetGlyphIds` and takes its path from this build, never from the file — a
-project file is untrusted input and that path goes straight into an `<img>`.
-Since the builder writes only the marks a level names, rebuilding can retire an
-id; a project that named it loses that mark and keeps the rest of its band.
+`src/presets.ts` is the hand-written part: it unpacks the data into specs and
+ids, and applying a preset changes the marks, the band count, `peak` and
+`maxSize`, and deliberately nothing about the picture. **A band holds a preset
+level by reference**, `level:<set>:<n>`, not as a list of ids — 1812's ids would
+be half a megabyte in every saved project, undo step and share link. Read a
+band's marks through `bandGlyphs(band)`, which expands references, never
+through `band.glyphs` directly; load them through `librarySpecs(settings)`.
+Preset marks are never copied into `settings.glyphs`. `projectState.ts` accepts
+a reference only if it names a set and level this build ships, and a preset mark
+by **id membership** in `presetGlyphIds`, taking its path and box from this
+build, never from the file — a project file is untrusted input and that path
+goes straight into an `<img>`. Rebuilding can retire an id; a project that named
+it loses that mark and keeps the rest of its band.
 
-**A level's marks are chosen to be unlike each other**, not to be the
-best-scoring ones. Every mark in a pool prints, cycling cell by cell, so the
-pool size *is* how varied that level looks; ranked on quality alone a level of
-ten fills with ten impressions of the same letter. The first mark of each level
-is still the best-scoring one, because the ramp measures the level's size from
-it. Pool sizes are per set — a set of fourteen scans cannot fill a level of ten
-— and twelve is a hard ceiling, because `projectState.readBands` slices a band
-there and a thirteenth mark would vanish on save.
+**In a hand-picked set a level's marks are chosen to be unlike each other**,
+not to be the best-scoring ones. Every mark in a pool prints, cycling cell by
+cell, so the pool size *is* how varied that level looks; ranked on quality
+alone a level of ten fills with ten impressions of the same letter. The first
+mark of each level is still the best-scoring one, because the ramp measures the
+level's size from it. Pool sizes are per set — a set of fourteen scans cannot
+fill a level of ten. An `every` set (1812) chooses nothing: each mark goes to
+exactly one level, and its reference is again the one that prints it best.
+
+**Spacing is pitch, not size.** `settings.spacing` (`column gap`, `row gap`)
+adds paper between marks as a share of a mark's cell. `grid` still fixes that
+cell, so a gap reduces the columns or rows (`gridSize`), cells stop being
+square (`pitchAspect` — the tone field averages each cell's whole pitch), and
+placement uses separate x and y pitches from `cellGeometry`. The frame keeps the
+source's aspect; halftone ignores spacing.
 
 **The preview is the export.** `settings.outputWidth` is the explicit 256–4096px
 frame width; height follows the grid/source aspect and both sides are rounded

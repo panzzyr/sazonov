@@ -15,7 +15,7 @@
  * without a canvas. Only `sampleSource` touches the DOM.
  */
 
-import type { Range } from "../types";
+import type { Range, Spacing } from "../types";
 
 /** sRGB transfer function, tabulated: this runs once per pixel of every frame. */
 const linearTable = (() => {
@@ -140,13 +140,35 @@ export function bandFor(
   return rampInvert ? bandCount - 1 - index : index;
 }
 
-/** Cell grid for a source, derived from its aspect. Cells are always square. */
-export function gridSize(grid: number, sourceWidth: number, sourceHeight: number) {
+const noSpacing: Spacing = { x: 0, y: 0 };
+
+/**
+ * Width over height of one cell's pitch — the mark's own square cell plus the
+ * gaps beside and below it. 1 when there is no spacing.
+ */
+export function pitchAspect(spacing: Spacing) {
+  return (1 + spacing.x) / (1 + spacing.y);
+}
+
+/**
+ * Cell grid for a source, derived from its aspect.
+ *
+ * `grid` is how many marks a row holds with no spacing, which is what fixes
+ * the size of a mark's own cell. A gap keeps that size and moves the marks
+ * apart, so a row and a column hold fewer of them: the pitch from one mark to
+ * the next is its cell plus its gap.
+ */
+export function gridSize(
+  grid: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  spacing: Spacing = noSpacing,
+) {
   const across = Math.max(1, Math.round(grid));
-  if (sourceWidth <= 0 || sourceHeight <= 0) return { gridW: across, gridH: across };
+  const down = sourceWidth > 0 && sourceHeight > 0 ? (across * sourceHeight) / sourceWidth : across;
   return {
-    gridW: across,
-    gridH: Math.max(1, Math.round((across * sourceHeight) / sourceWidth)),
+    gridW: Math.max(1, Math.round(across / (1 + spacing.x))),
+    gridH: Math.max(1, Math.round(down / (1 + spacing.y))),
   };
 }
 
@@ -160,6 +182,10 @@ const workingEdge = 1400;
  * not get more accurate past this point, and a 4K frame would cost tens of
  * milliseconds per frame for nothing. The source is centre-cropped to the
  * grid's aspect, which differs from its own by at most half a cell.
+ *
+ * `cellAspect` is the width over height of one cell, from `pitchAspect`: with
+ * spacing a cell is no longer square, and the area it averages is its whole
+ * pitch, gap included — the gap is part of the picture it stands for.
  */
 export function sampleSource(
   source: CanvasImageSource,
@@ -168,8 +194,9 @@ export function sampleSource(
   gridW: number,
   gridH: number,
   scratch: HTMLCanvasElement,
+  cellAspect = 1,
 ): ToneField | null {
-  const aspect = gridW / gridH;
+  const aspect = (gridW * cellAspect) / gridH;
   const workWidth = Math.max(gridW, Math.min(workingEdge, Math.round(sourceWidth)));
   const workHeight = Math.max(gridH, Math.round(workWidth / aspect));
 

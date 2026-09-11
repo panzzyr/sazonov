@@ -15,7 +15,7 @@ import { GlyphRenderer, outputSize } from "../engine/render";
 import { HalftoneRenderer } from "../engine/halftone";
 import { GlyphLibrary } from "../engine/glyphLibrary";
 import { solveRamp } from "../engine/ramp";
-import { gridSize, sampleSource, type ToneField } from "../engine/tone";
+import { gridSize, pitchAspect, sampleSource, type ToneField } from "../engine/tone";
 import {
   halftoneSize,
   maxExportFrames,
@@ -60,7 +60,7 @@ export function sequenceSize(source: ExportSource, settings: Settings) {
     const frame = halftoneSize(settings.outputWidth, source.width, source.height);
     return { gridW, gridH, cell: 0, width: frame.width, height: frame.height };
   }
-  const { gridW, gridH } = gridSize(settings.grid, source.width, source.height);
+  const { gridW, gridH } = gridSize(settings.grid, source.width, source.height, settings.spacing);
   const { cell, width, height } = outputSize(settings, { gridW, gridH });
   return { gridW, gridH, cell, width, height };
 }
@@ -120,9 +120,10 @@ export async function* renderSequence(options: SequenceOptions): AsyncGenerator<
   const renderer = halftoning ? new HalftoneRenderer(canvas) : new GlyphRenderer(canvas);
   // The ramp depends only on the settings, so it is solved once for the run.
   const ramp = halftoning ? [] : solveRamp(settings, library.metrics);
+  const cellAspect = halftoning ? 1 : pitchAspect(settings.spacing);
 
   let field: ToneField | null = source.kind === "image"
-    ? sampleSource(source.bitmap, source.width, source.height, gridW, gridH, scratch)
+    ? sampleSource(source.bitmap, source.width, source.height, gridW, gridH, scratch, cellAspect)
     : null;
 
   for (let index = 0; index < total; index += 1) {
@@ -130,7 +131,7 @@ export async function* renderSequence(options: SequenceOptions): AsyncGenerator<
 
     if (source.kind === "video") {
       await seek(source.video, Math.min(source.duration, index / settings.targetFps));
-      field = sampleSource(source.video, source.width, source.height, gridW, gridH, scratch);
+      field = sampleSource(source.video, source.width, source.height, gridW, gridH, scratch, cellAspect);
     }
     if (!field) throw new Error("The source could not be sampled onto the grid.");
 

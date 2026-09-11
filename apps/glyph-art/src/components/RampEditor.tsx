@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { GlyphLibrary, MeasuredGlyph } from "../engine/glyphLibrary";
+import { drawGlyph, type GlyphLibrary, type MeasuredGlyph } from "../engine/glyphLibrary";
 import { NumberEntry } from "./RangeControl";
 import { poolCorrection, type SolvedBand } from "../engine/ramp";
+import { bandGlyphs, levelLabel } from "../presets";
 import type { Settings } from "../types";
 import { Icon } from "./Icons";
 
@@ -41,8 +42,9 @@ function Well({ glyph, size, inverted }: WellProps) {
     const width = glyph.aspect >= 1 ? long : long * glyph.aspect;
     const height = glyph.aspect >= 1 ? long / glyph.aspect : long;
     context.imageSmoothingQuality = "high";
-    context.drawImage(
-      glyph.bitmap,
+    drawGlyph(
+      context,
+      glyph,
       (wellPixels - width) / 2,
       (wellPixels - height) / 2,
       width,
@@ -105,7 +107,7 @@ export function RampEditor({
       <div className="ramp-columns">
         {settings.bands.map((band, index) => {
           const solved = ramp[index];
-          const pool = band.glyphs
+          const pool = bandGlyphs(band)
             .map((id) => library.get(id))
             .filter((glyph): glyph is MeasuredGlyph => Boolean(glyph));
           const shown = pool.length > 1
@@ -184,17 +186,21 @@ export function RampEditor({
               </div>
 
               <div className="ramp-chips">
-                {band.glyphs.map((id, position) => (
-                  <button
-                    key={`${id}-${position}`}
-                    type="button"
-                    className="ramp-chip"
-                    title={`Remove ${library.get(id)?.spec.label ?? id}`}
-                    onClick={() => onRemove(index, id)}
-                  >
-                    {library.get(id)?.spec.label ?? "?"}
-                  </button>
-                ))}
+                {band.glyphs.map((id, position) => {
+                  // A preset level is one chip, however many marks it stands for.
+                  const label = levelLabel(id) ?? library.get(id)?.spec.label;
+                  return (
+                    <button
+                      key={`${id}-${position}`}
+                      type="button"
+                      className="ramp-chip"
+                      title={`Remove ${label ?? id}`}
+                      onClick={() => onRemove(index, id)}
+                    >
+                      {label ?? "?"}
+                    </button>
+                  );
+                })}
                 <label className="ramp-add">
                   +
                   <input

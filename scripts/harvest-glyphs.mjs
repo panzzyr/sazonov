@@ -2,11 +2,15 @@
 //
 //   node scripts/harvest-glyphs.mjs <set-id> <page.png> [more pages...]
 //
-// Writes candidate marks into assets/glyph-presets/<set-id>/, in exactly the
-// shape a hand-picked scan arrives in — black ink on transparency, one mark per
-// file — so `build-glyph-presets.mjs` cannot tell the difference and does not
-// need to. Harvesting answers "what marks are on this page"; the builder still
-// answers "which of them prints on which level".
+// Writes candidate marks into assets/glyph-presets/<set-id>/harvested/, in
+// exactly the shape a hand-picked scan arrives in — black ink on transparency,
+// one mark per file — so `build-glyph-presets.mjs` cannot tell the difference
+// and does not need to. Harvesting answers "what marks are on this page"; the
+// builder still answers "which of them prints on which level".
+//
+// The subdirectory is the one this script owns and wipes. Hand-picked scans
+// sit beside it in the set's own directory, so one set can be both — the 1812
+// set is — and re-harvesting its pages never touches the scans chosen by hand.
 //
 // **No machine vision here, and none is needed.** A cleaned letterpress page is
 // ink on transparency, so a letter is literally a connected island of alpha.
@@ -384,9 +388,10 @@ async function main() {
     throw new Error("usage: node scripts/harvest-glyphs.mjs <set-id> <page.png> [pages...]");
   }
 
-  const directory = path.join(outputRoot, set);
+  const directory = path.join(outputRoot, set, "harvested");
   // Harvesting is not additive: re-running it on a changed page list should
   // leave the set as the pages describe it, not as the union of every run.
+  // Only `harvested/` is wiped — never the hand-picked scans beside it.
   await rm(directory, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });
 
@@ -430,7 +435,7 @@ async function main() {
   );
 
   const files = (await readdir(directory)).filter((name) => name.endsWith(".png"));
-  console.log(`\n${set}: ${files.length} candidate marks in assets/glyph-presets/${set}/`);
+  console.log(`\n${set}: ${files.length} candidate marks in assets/glyph-presets/${set}/harvested/`);
   console.log("Now run: node scripts/build-glyph-presets.mjs");
 }
 

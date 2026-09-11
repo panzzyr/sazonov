@@ -59,6 +59,7 @@ type GlobalKey =
   | "mode"
   | "seed"
   | "grid"
+  | "spacing"
   | "weight"
   | "peak"
   | "maxSize"

@@ -15,15 +15,34 @@
  * source-derived grid aspect, so the canvas on screen *is* the export frame.
  */
 
-import { bandFor, type ToneField } from "./tone";
+import { bandFor, pitchAspect, type ToneField } from "./tone";
 import { cycleIndex, handDraw } from "./cellParams";
 import { poolCorrection, solveRamp, type SolvedBand } from "./ramp";
-import type { GlyphLibrary, MeasuredGlyph } from "./glyphLibrary";
+import { drawGlyph, type GlyphLibrary, type MeasuredGlyph } from "./glyphLibrary";
+import { bandGlyphs } from "../presets";
 import { minMarkSize, outputFrameSize, type ExportInk, type Settings } from "../types";
 
+/**
+ * Where marks sit on a frame.
+ *
+ * `cell` is the mark's own square cell — what a band's size is a fraction of.
+ * `pitchX` and `pitchY` are the distance from one mark to the next, which is
+ * the cell plus its spacing. With no spacing all three are equal.
+ */
+export type CellGeometry = { cell: number; pitchX: number; pitchY: number };
+
+export function cellGeometry(settings: Settings, frameWidth: number, gridW: number): CellGeometry {
+  const pitchX = frameWidth / gridW;
+  const cell = pitchX / (1 + settings.spacing.x);
+  return { cell, pitchX, pitchY: cell * (1 + settings.spacing.y) };
+}
+
 export function outputSize(settings: Settings, field: Pick<ToneField, "gridW" | "gridH">) {
-  const frame = outputFrameSize(settings.outputWidth, field.gridW / field.gridH);
-  return { ...frame, cell: frame.width / field.gridW };
+  const frame = outputFrameSize(
+    settings.outputWidth,
+    (field.gridW / field.gridH) * pitchAspect(settings.spacing),
+  );
+  return { ...frame, ...cellGeometry(settings, frame.width, field.gridW) };
 }
 
 export type RenderOptions = {
@@ -50,15 +69,18 @@ export type GlyphPlacement = {
 export function* glyphPlacements(
   { settings, field, library, frame }: RenderOptions,
   ramp: SolvedBand[],
-  cell: number,
+  { cell, pitchX, pitchY }: CellGeometry,
 ): Generator<GlyphPlacement> {
   const bandCount = settings.bands.length;
+  // Expanded once per frame rather than per cell: a preset level is one
+  // reference in the band and a couple of hundred marks here.
+  const pools = settings.bands.map(bandGlyphs);
 
   for (let y = 0; y < field.gridH; y += 1) {
     for (let x = 0; x < field.gridW; x += 1) {
       const cellIndex = y * field.gridW + x;
       const band = bandFor(field.tone[cellIndex], settings.levels, bandCount, settings.rampInvert);
-      const pool = settings.bands[band]?.glyphs;
+      const pool = pools[band];
       if (!pool || pool.length === 0) continue;
 
       const reference = library.get(pool[0]);
@@ -80,8 +102,8 @@ export function* glyphPlacements(
       yield {
         glyph: chosen,
         cellIndex,
-        centreX: (x + 0.5 + hand.offsetX) * cell,
-        centreY: (y + 0.5 + hand.offsetY) * cell,
+        centreX: (x + 0.5) * pitchX + hand.offsetX * cell,
+        centreY: (y + 0.5) * pitchY + hand.offsetY * cell,
         width: chosen.aspect >= 1 ? long : long * chosen.aspect,
         height: chosen.aspect >= 1 ? long / chosen.aspect : long,
         rotation: hand.rotation,
@@ -104,7 +126,7 @@ export class GlyphRenderer {
 
   render(options: RenderOptions) {
     const { settings, field, library, frame, ink } = options;
-    const { cell, width, height } = outputSize(settings, field);
+    const { width, height, ...geometry } = outputSize(settings, field);
     const ramp = options.ramp ?? solveRamp(settings, library.metrics);
 
     if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -123,7 +145,7 @@ export class GlyphRenderer {
     maskContext.imageSmoothingEnabled = true;
     maskContext.imageSmoothingQuality = "high";
 
-    this.stamp(maskContext, options, ramp, cell);
+    this.stamp(maskContext, options, ramp, geometry);
     this.colorize(maskContext, options, width, height);
     this.compose(options, width, height);
   }
@@ -133,17 +155,18 @@ export class GlyphRenderer {
     context: CanvasRenderingContext2D,
     { settings, field, library, frame }: RenderOptions,
     ramp: SolvedBand[],
-    cell: number,
+    geometry: CellGeometry,
   ) {
     const rotates = settings.hand > 0;
 
-    for (const placement of glyphPlacements({ settings, field, library, frame, ink: "flat", ramp }, ramp, cell)) {
+    for (const placement of glyphPlacements({ settings, field, library, frame, ink: "flat", ramp }, ramp, geometry)) {
       if (rotates && placement.rotation !== 0) {
         context.save();
         context.translate(placement.centreX, placement.centreY);
         context.rotate(placement.rotation);
-        context.drawImage(
-          placement.glyph.bitmap,
+        drawGlyph(
+          context,
+          placement.glyph,
           -placement.width / 2,
           -placement.height / 2,
           placement.width,
@@ -152,8 +175,9 @@ export class GlyphRenderer {
         context.restore();
         continue;
       }
-      context.drawImage(
-        placement.glyph.bitmap,
+      drawGlyph(
+        context,
+        placement.glyph,
         placement.centreX - placement.width / 2,
         placement.centreY - placement.height / 2,
         placement.width,

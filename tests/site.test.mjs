@@ -225,15 +225,17 @@ test("glyph art is nested under /glyph-art/ with its preset marks", async () => 
 
   await stat(path.join(output, "glyph-art/support/index.html"));
 
-  // The preset marks are the one thing loaded after the bundle. Missing them
+  // The preset sheets are the one thing loaded after the bundle. Missing them
   // does not fail a build or a unit test — it fails silently in production,
   // with every preset printing nothing.
   const module = await readFile(
     path.resolve("apps/glyph-art/src/generatedPresets.ts"),
     "utf8",
   );
-  const sources = [...module.matchAll(/source: "(presets\/[^"]+)"/g)].map((match) => match[1]);
-  assert.ok(sources.length >= 60, `only ${sources.length} preset marks are declared`);
+  const sources = [...module.matchAll(/"(presets\/[^"]+\.webp)"/g)].map((match) => match[1]);
+  const sets = [...module.matchAll(/^ {4}id: "([^"]+)"/gm)].length;
+  assert.ok(sets >= 4, `only ${sets} preset sets are declared`);
+  assert.ok(sources.length >= sets, `only ${sources.length} preset sheets are declared`);
   for (const source of sources) {
     const info = await stat(path.join(output, "glyph-art", source));
     assert.ok(info.size > 0, source);

@@ -7,7 +7,7 @@ import { GlyphRenderer } from "./engine/render";
 import { HalftoneRenderer } from "./engine/halftone";
 import { solveRamp } from "./engine/ramp";
 import { loopLength } from "./engine/cellParams";
-import { autoLevels, gridSize, sampleSource, type ToneField } from "./engine/tone";
+import { autoLevels, gridSize, pitchAspect, sampleSource, type ToneField } from "./engine/tone";
 import { exportPngSequence } from "./export/pngSequence";
 import { canEncodeMp4, exportMp4 } from "./export/mp4";
 import { exportSvg } from "./export/svg";
@@ -20,7 +20,7 @@ import {
   MAX_EXPORT_FRAMES,
   type ExportSource,
 } from "./export/renderSequence";
-import { activePreset, presets } from "./presets";
+import { activePreset, bandGlyphs, levelMarks, librarySpecs, presets } from "./presets";
 import { decodeSettings, encodeSettings, hasCustomMarks, parseSettings } from "./projectState";
 import { useGlyphArtStore } from "./store";
 import {
@@ -35,6 +35,7 @@ import {
   maxOutputWidth,
   maxPeak,
   maxSizeCeiling,
+  maxSpacing,
   maxSpread,
   maxWeight,
   minBands,
@@ -159,27 +160,37 @@ export function App() {
   const halftoneRef = useRef<HalftoneRenderer | null>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
   const libraryRef = useRef<GlyphLibrary | null>(null);
-  const glyphsRef = useRef(settings.glyphs);
+  // The project's own marks plus the preset marks its bands name by reference.
+  const specs = useMemo(
+    () => librarySpecs({ glyphs: settings.glyphs, bands: settings.bands }),
+    [settings.glyphs, settings.bands],
+  );
+  const glyphsRef = useRef(specs);
   const leveledRef = useRef<Media | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  glyphsRef.current = settings.glyphs;
+  glyphsRef.current = specs;
   if (!scratchRef.current) scratchRef.current = document.createElement("canvas");
   if (!libraryRef.current) libraryRef.current = new GlyphLibrary();
   const library = libraryRef.current;
 
   const mp4Available = useMemo(() => canEncodeMp4(), []);
 
-  /** Marks are rasterized once; this is what says when that has to happen. */
+  /**
+   * Marks are rasterized once; this is what says when that has to happen. A
+   * preset level counts by its reference, not by the marks it stands for —
+   * the reference is what changes, and it is a few bytes to compare.
+   */
   const glyphSignature = settings.glyphs
     .map((spec) => `${spec.id}:${spec.kind}:${spec.font ?? ""}:${spec.source.length}`)
-    .join("|");
+    .join("|")
+    + `|${settings.bands.flatMap((band) => band.glyphs).filter((id) => levelMarks(id)).join(",")}`;
 
   useEffect(() => {
     let cancelled = false;
-    // A preset cut from newspaper pages is a hundred and twenty-five marks and
-    // takes a few seconds on a cold cache. Without this the ramp and the canvas
-    // simply sit empty, and the tool reads as broken rather than as busy.
+    // The 1812 set is a couple of megabytes of sheets and takes a few seconds
+    // on a cold cache. Without this the ramp and the canvas simply sit empty,
+    // and the tool reads as broken rather than as busy.
     library
       .ensure(glyphsRef.current, (done, total) => {
         if (!cancelled && total > 8) setLoadingMarks({ done, total });
@@ -253,9 +264,11 @@ export function App() {
     // A halftone dot reads the picture at its own centre, so the field it reads
     // is not the screen and has nothing to do with the ruling; the glyph path's
     // field *is* the cell grid. One sampling step, two very different grids.
-    const { gridW, gridH } = settings.mode === "halftone"
+    const halftoning = settings.mode === "halftone";
+    const { gridW, gridH } = halftoning
       ? halftoneField(settings, media.width, media.height)
-      : gridSize(settings.grid, media.width, media.height);
+      : gridSize(settings.grid, media.width, media.height, settings.spacing);
+    const cellAspect = halftoning ? 1 : pitchAspect(settings.spacing);
 
     const run = async () => {
       if (media.kind === "video") {
@@ -263,14 +276,14 @@ export function App() {
         if (cancelled) return;
       }
       const source = media.kind === "video" ? media.video : media.bitmap;
-      const next = sampleSource(source, media.width, media.height, gridW, gridH, scratchRef.current!);
+      const next = sampleSource(source, media.width, media.height, gridW, gridH, scratchRef.current!, cellAspect);
       if (!cancelled) setField(next);
     };
     void run();
     return () => {
       cancelled = true;
     };
-  }, [media, settings.mode, settings.grid, settings.outputWidth, settings.targetFps, videoFrame]);
+  }, [media, settings.mode, settings.grid, settings.spacing, settings.outputWidth, settings.targetFps, videoFrame]);
 
   // Auto-levels, once per source. A flat photo quantized into seven bands uses
   // four of them and looks dead; per-frame levels on a video would pump.
@@ -554,8 +567,9 @@ export function App() {
   }, [redo, totalFrames, undo]);
 
   const cell = raster?.cell ?? 0;
-  const seamless = loopLength(settings.bands.map((band) => band.glyphs.length), settings.hold);
-  const cycling = settings.bands.some((band) => band.glyphs.length > 1);
+  const poolLengths = settings.bands.map((band) => bandGlyphs(band).length);
+  const seamless = loopLength(poolLengths, settings.hold);
+  const cycling = poolLengths.some((length) => length > 1);
   const halftoning = settings.mode === "halftone";
   const halftone = settings.halftone;
   const preset = activePreset(settings);
@@ -648,11 +662,12 @@ export function App() {
                 ))}
               </div>
               <p className="control-hint">
-                Each set is scanned type and marks of its period, sorted onto twelve levels:
-                every level prints at least two of them, and the darkest four. A mark serves
-                two or three levels at different sizes, so a level is a texture rather than a
-                repeated stamp. Only the marks change — the grid, the levels and the
-                inversions stay where you put them.
+                Each set is scanned type and marks of its period, sorted onto twelve levels.
+                The hand-picked sets print two marks on every level and four on the darkest,
+                a mark serving two or three levels at different sizes. 1812 prints every one
+                of its nearly three thousand marks — a couple of hundred to a level — and
+                loads a couple of megabytes when you pick it. Only the marks change — the
+                grid, the levels and the inversions stay where you put them.
               </p>
             </section>
           )}
@@ -668,6 +683,22 @@ export function App() {
               onChange={(value) => setGlobal("grid", Math.round(value))}
             />
             <SliderControl
+              label="column gap"
+              value={settings.spacing.x}
+              min={0}
+              max={maxSpacing}
+              step={0.05}
+              onChange={(value) => setGlobal("spacing", { ...settings.spacing, x: value }, "spacing.x")}
+            />
+            <SliderControl
+              label="row gap"
+              value={settings.spacing.y}
+              min={0}
+              max={maxSpacing}
+              step={0.05}
+              onChange={(value) => setGlobal("spacing", { ...settings.spacing, y: value }, "spacing.y")}
+            />
+            <SliderControl
               label="hand"
               value={settings.hand}
               min={0}
@@ -676,6 +707,8 @@ export function App() {
               onChange={(value) => setGlobal("hand", value)}
             />
             <p className="control-hint">
+              The gaps are paper between columns and between rows, as a share of a mark's
+              cell: each mark keeps the size cells gives it, and the grid holds fewer of them.
               hand adds seeded rotation, offset and size jitter per cell — the same every
               frame, so the surface loosens without boiling.
               {cell < 8 && " At this many cells the marks are smaller than 8px and stop reading as marks."}

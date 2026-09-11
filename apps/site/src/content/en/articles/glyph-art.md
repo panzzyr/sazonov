@@ -52,6 +52,12 @@ survives at 72, becomes an abstraction near 48, and turns into texture past 120.
 Below about eight pixels per cell the marks stop reading as marks and you are
 better off with [printor](/printor/); the panel tells you when you get there.
 
+`column gap` and `row gap` put paper between the marks, as a share of a mark's
+own cell — 1 is a gap as wide as the mark's cell. A gap does not shrink the
+marks: each keeps the size `cells` gives it, and the grid simply holds fewer of
+them. A row gap on its own turns the picture into lines of print with white
+between them, the way leading does in a column of type.
+
 `hand` loosens the grid. It is one knob covering three things at once — a small
 rotation, a small offset and a small size change, drawn separately for every
 cell. At 0 the result is a machine. Around 0.35 it reads hand-stamped.
@@ -134,21 +140,22 @@ square sit on one ramp without any of them reading two bands off.
 
 ## Presets
 
-Five sets ship with the tool: **18th century**, **1812**, **Great War**,
-**1941** and **1812 press**. Each is scanned type and marks of its period —
-letters, numerals, seals, ornaments — sorted onto twelve levels.
+Four sets ship with the tool: **18th century**, **1812 · Patriotic War**,
+**1914 · First World War** and **1941 · Great Patriotic War**. Each is scanned
+type and marks of its period — letters, numerals, seals, ornaments — sorted
+onto twelve levels.
 
 Picking one changes the marks and the shape of their ramp, and nothing about the
 picture. The grid, the levels, the inversions and your source all stay where you
 put them, so you can flip between the sets to compare them.
 
-Every level prints at least two different marks, and the darkest three print at
-least four. **1812 press** prints ten on every level and twelve on the darkest,
-because it has the material to. A mark serves two or three levels at different
-sizes, which is where the variety comes from without a larger set of scans — so
-a level is a texture rather than one stamp repeated.
+In the three hand-picked sets every level prints at least two different marks,
+and the darkest three print at least four. A mark serves two or three levels at
+different sizes, which is where the variety comes from without a larger set of
+scans — so a level is a texture rather than one stamp repeated. **1812** works
+differently, and has its own section below.
 
-The marks on a level are chosen to be **as unlike each other as possible**, not
+In a hand-picked set, the marks on a level are chosen to be **as unlike each other as possible**, not
 simply the ones that print it best. That matters more than it sounds: every mark
 in a level prints, cycling from cell to cell, so a level filled from the top of
 a ranked list ends up as ten impressions of the same letter — ten marks by the
@@ -169,16 +176,21 @@ cell the other way and inks two fifths of what its density suggests.
 Each set carries its own `max ink`, because that is a fact about the material:
 airy letterpress cannot cover as much of a cell as a solid woodblock without
 spilling out of it. **18th century** is the lightest set for exactly that reason
-and will not print a true black; **1812 press** is the heaviest, because a case
-of newspaper type contains genuinely solid sorts. That is the type, not the tool.
+and will not print a true black; **1812** is the heaviest, because a case of
+newspaper type contains genuinely solid sorts. That is the type, not the tool.
 
-### 1812 press
+### 1812
 
-The other four sets were picked mark by mark. This one was cut out of four whole
-newspaper pages of 1812 and 1813 — *Вѣстникъ Европы*, *Северная почта*, *Рускiй
-Инвалидъ*, *Сынъ Отечества* — automatically, and it is a different kind of set
-because of it: 125 marks drawn from a pool of nearly three thousand, so every
-level is deep and no two neighbouring cells at the same tone look alike.
+The other three sets were picked mark by mark. This one is forty-odd scans
+picked by hand plus everything cut automatically out of four whole newspaper
+pages of 1812 and 1813 — *Вѣстникъ Европы*, *Северная почта*, *Рускiй Инвалидъ*,
+*Сынъ Отечества* — and it prints all of it: nearly three thousand marks, dealt
+a couple of hundred to each level, the densest to the darkest. Nothing is
+chosen and nothing is left out, so no two neighbouring cells at the same tone
+are likely to share a mark.
+
+The price is weight. The set is about two and a half megabytes, fetched only
+when you pick it, and it takes a moment on a slow connection.
 
 Nothing recognised those letters. A page with its background removed is ink on
 transparency, so a letter *is* a connected island of ink, and finding those

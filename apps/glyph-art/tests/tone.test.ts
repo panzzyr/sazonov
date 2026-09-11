@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { autoLevels, bandFor, gridSize, lightness, reduceToCells } from "../src/engine/tone";
+import { autoLevels, bandFor, gridSize, lightness, pitchAspect, reduceToCells } from "../src/engine/tone";
+import { sequenceSize } from "../src/export/renderSequence";
+import { defaultSettings } from "../src/types";
 
 function checkerboard(width: number, height: number) {
   const pixels = new Uint8ClampedArray(width * height * 4);
@@ -128,5 +130,32 @@ describe("grid geometry", () => {
   it("never collapses to nothing", () => {
     expect(gridSize(8, 4000, 10).gridH).toBe(1);
     expect(gridSize(72, 0, 0)).toEqual({ gridW: 72, gridH: 72 });
+  });
+});
+
+describe("spacing", () => {
+  it("keeps each mark's cell and fits fewer of them", () => {
+    expect(gridSize(72, 1600, 1200, { x: 0, y: 0 })).toEqual({ gridW: 72, gridH: 54 });
+    expect(gridSize(72, 1600, 1200, { x: 1, y: 0 })).toEqual({ gridW: 36, gridH: 54 });
+    expect(gridSize(72, 1600, 1200, { x: 0, y: 1 })).toEqual({ gridW: 72, gridH: 27 });
+  });
+
+  it("makes a cell's pitch as wide as its gaps", () => {
+    expect(pitchAspect({ x: 0, y: 0 })).toBe(1);
+    expect(pitchAspect({ x: 1, y: 0 })).toBe(2);
+    expect(pitchAspect({ x: 0, y: 1 })).toBe(0.5);
+  });
+
+  it.each([
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0.5, y: 1.5 },
+  ])("keeps the frame the source's shape and the mark its size at %o", (spacing) => {
+    const source = { kind: "image" as const, bitmap: {} as ImageBitmap, width: 1600, height: 1200 };
+    const frame = sequenceSize(source, { ...defaultSettings, spacing });
+    expect(frame.width / frame.height).toBeCloseTo(1600 / 1200, 1);
+    // A gap moves marks apart; it does not make them smaller.
+    expect(frame.cell).toBeCloseTo(defaultSettings.outputWidth / defaultSettings.grid, 0);
   });
 });

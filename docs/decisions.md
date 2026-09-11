@@ -1,5 +1,44 @@
 # Architecture decisions
 
+## 2026-09-11 — glyph art spaces marks by pitch, not by shrinking them
+
+- **Decision:** `column gap` and `row gap` add paper between marks as a share of
+  a mark's own cell. `cells` still fixes the size of that cell, so a gap moves
+  the marks apart and the grid holds fewer columns or rows of them.
+- **Alternatives:** Shrink every mark inside a fixed grid; one uniform gap.
+- **Reason:** Shrinking the marks is what lowering `max ink` already does, and
+  it lightens the picture without changing its structure. Separate horizontal
+  and vertical pitch is what tracking and leading are in type: a row gap turns
+  the picture into lines of print with paper between them.
+- **Consequences:** Cells are no longer square. `gridSize` takes the spacing,
+  `sampleSource` averages each cell's whole pitch (the gap stands for picture
+  too), and placement uses separate x and y pitches from `cellGeometry`. The
+  frame keeps the source's aspect. Halftone mode ignores spacing.
+
+## 2026-09-11 — glyph art prints every 1812 mark, from sprite sheets, by reference
+
+- **Decision:** Merge 1812 and 1812 press into one set, **1812 · Patriotic
+  War**, that deals every printable mark onto exactly one level — 2880 marks,
+  about 260 a level, densest to darkest. Ship every set as sprite sheets rather
+  than a file per mark, and let a band hold a preset level as one reference,
+  `level:<set>:<n>`, instead of a list of mark ids. Rename the sets for the wars
+  their type comes from: 1914 · First World War, 1941 · Great Patriotic War.
+- **Alternatives:** Keep choosing about 126 of the 2839 harvested marks. One
+  WebP per mark (2880 requests). Bands listing every id — half a megabyte in
+  every saved project, undo step and share link.
+- **Reason:** The pool of a level is how varied it looks, so the whole case of
+  type is the richest set the tool can print. Listing ids also had a live bug:
+  `readGlyphs` cut a project at 64 marks, so a saved 1812 press project lost
+  most of its marks on reload.
+- **Consequences:** 1812 downloads about 2.5 MB when it is picked, against
+  110 KB before; lossless sheets would have been 5.5 MB, so its sheets are lossy
+  WebP at 80 and the hand-picked sets stay lossless. The per-set budget is now
+  2.75 MB and the total 3 MB. The builder re-measures every mark off the sheets
+  it wrote and solves the ramp on those numbers, so the browser measures exactly
+  what the build did. The mark table adds about 33 KB gzip to the bundle; the
+  measured metrics live in a module only the tests import. Projects saved
+  against 1812 press lose those marks, whose ids changed, and keep the rest.
+
 ## 2026-09-10 — glyph art fits curves to the traced outlines
 
 - **Decision:** Fit cubic Béziers to each traced contour, cutting it at detected

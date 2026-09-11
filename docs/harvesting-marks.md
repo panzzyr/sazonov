@@ -9,8 +9,8 @@ are separate because they answer separate questions, and because the second one
 also serves the hand-picked sets, which never go near the first.
 
 ```sh
-# 1. cut the pages into candidate marks
-node scripts/harvest-glyphs.mjs eighteen-twelve-press assets/glyph-pages/eighteen-twelve-press/*.png
+# 1. cut the pages into candidate marks, in assets/glyph-presets/eighteen-twelve/harvested/
+node scripts/harvest-glyphs.mjs eighteen-twelve assets/glyph-pages/eighteen-twelve/*.png
 
 # 2. solve the ladder and write the deployed set
 node scripts/build-glyph-presets.mjs
@@ -130,8 +130,12 @@ cannot tell the difference and does not need to. Plus `harvest.json`, recording
 for each mark which page it came from, where on that page, and its measurements.
 Nothing reads that file; it is there so a mark can be traced back to its source.
 
-The four shipped pages yield **2839 candidates**. That is not the set — it is
-the case of type the set will be composed from.
+All of it goes into `assets/glyph-presets/<set-id>/harvested/`. That
+subdirectory is the only thing the script wipes, so hand-picked scans can sit
+beside it in the set's own directory and survive every re-harvest.
+
+The four shipped pages yield **2839 candidates** — the case of type the 1812
+set is composed from. That set prints all of them.
 
 ---
 
@@ -143,7 +147,7 @@ hand-picked marks identically.
 ### Every mark is normalised and measured
 
 Alpha is lifted out, inverted, and written as opaque grey — black ink on white
-paper — whatever polarity the source had. That one step is why all five sets
+paper — whatever polarity the source had. That one step is why all four sets
 behave the same, and why the density measured here is the density the browser
 measures when it loads the mark.
 
@@ -174,11 +178,31 @@ This is also why **wide marks sort themselves onto the light levels** with
 nothing in the code looking at proportion to put them there. A mark is fitted
 into its square cell by its long side, so one 2.5 times as wide as it is tall
 reaches only two fifths of the cell the other way and inks two fifths of what
-its density suggests. It hits the ceiling at a far lighter tone. On the
-harvested set this is visible in the data: mean proportion runs 1.47 : 1 on the
-lightest level and 1.05 : 1 on the darkest.
+its density suggests. It hits the ceiling at a far lighter tone. On 1812 this
+is plain in the data: the lightest levels carry markedly longer marks than the
+darkest, and `tests/presets.test.ts` asserts it.
+
+### A set with more material than places prints all of it
+
+A set marked `every: true` in the `sets` array — 1812 is the one — chooses
+nothing. Every mark that can print anywhere is dealt onto exactly one level:
+darkest level first, densest marks first, each level taking an even share of
+what is left. A dark level that fewer marks can reach takes all of them and
+leaves a bigger share to the rest. On 1812 that is 2880 marks, about 260 to a
+level and 88 on the darkest.
+
+Densest-first is also what keeps a level's marks near one size. Every mark on
+a level prints the same ink, so a sparse mark prints large and a solid one
+small; marks of similar coverage print at similar sizes. The first mark of a
+level is the one that prints it best, as below; the order of the rest does not
+matter, because each cell picks its own from the whole pool.
+
+The only marks left out are the ones that print nowhere — too sparse to reach
+even the lightest level inside the ceiling. On 1812 that is none.
 
 ### Within a level, marks are chosen to be unlike each other
+
+This is how the hand-picked sets fill their levels.
 
 A pool is not a fallback list. Every mark in it prints, cycling from cell to
 cell, so **the pool size is how varied that level looks**. Filling a level from
@@ -200,18 +224,18 @@ small enough to decide only between candidates the distance had already left
 close together.
 
 A mark serves at most three levels at different sizes, which is where a *small*
-set's variety comes from. A set cut from whole pages has more material than the
-ramp has places, so it never repeats a mark at all: 126 marks in 126 places.
+set's variety comes from.
 
 ### Pool sizes are per set
 
 | set | marks used | per level | darkest three | peak ink |
 | --- | --- | --- | --- | --- |
 | 18th century | 21 of 24 | 2 | 4 | 44% |
-| 1812 | 38 of 41 | 4 | 6 | 46% |
-| Great War | 14 of 14 | 2 | 4 | 54% |
-| 1941 | 17 of 17 | 2 | 4 | 63% |
-| **1812 press** | **126 of 2839** | **10** | **12** | **70%** |
+| **1812 · Patriotic War** | **2880 of 2881** | **~260** | **262 / 174 / 88** | **68%** |
+| 1914 · First World War | 14 of 14 | 2 | 4 | 54% |
+| 1941 · Great Patriotic War | 17 of 17 | 2 | 4 | 63% |
+
+1812's one missing mark is a blank scan, skipped before solving.
 
 A set not using every one of its scans is the diversity rule working, not
 material being ignored. The three that 18th century leaves out sit 0.27–0.31
@@ -226,20 +250,33 @@ because all *n* of them have to fit inside the cell. Taking 18th century from
 2/4 to 3/5 does use all 24 of its scans — and drops its peak ink from 44% to
 38%, because the fifth-densest mark cannot cover as much as the fourth.
 
-Twelve is a hard ceiling, not a taste: `projectState.readBands` slices a band at
-twelve marks, so a thirteenth would print from the preset button and vanish the
-moment the project was saved and reopened. `tests/presets.test.ts` asserts it.
+For an `every` set the anchor is `EVERY_ANCHOR` — the darkest level is solved
+so that its 24 densest marks still fit the cell.
+
+There is no ceiling on a pool from the project format. A preset puts one
+reference per band, `level:<set>:<n>`, standing for every mark on that level,
+so a saved project and a share link stay a few hundred bytes however deep the
+pools are.
 
 `peak` — the ink the darkest level asks for — is a property of the set, not a
 setting. Airy letterpress cannot cover as much of a cell as a solid woodblock
-without spilling out of it. The harvested set reaches the highest peak of the
-five because a case of newspaper type contains genuinely solid sorts.
+without spilling out of it. 1812 reaches the highest peak of the four because a
+case of newspaper type contains genuinely solid sorts.
 
-### Only what prints is written
+### Only what prints is written, onto sheets
 
 The builder wipes each set's output directory and writes only the marks that a
-level actually names. With 2839 candidates and 125 used, the alternative is
-several megabytes of marks nothing points at.
+level actually names, packed onto sprite sheets — `sheet-0.webp`, `sheet-1.webp`
+— at most 2048 px on a side, with two pixels of paper between marks so a scaled
+draw never samples a neighbour. A sheet is one request and one decode; a file
+per mark would be nearly three thousand of each for 1812.
+
+The hand-picked sets are lossless. 1812 is lossy WebP at quality 80 and a
+96 px long edge, because lossless it is five and a half megabytes. Lossy
+compression lifts the faint fringe of a soft scan past the ink floor, which
+would give the browser a different box than the build measured — so after
+writing the sheets the builder measures every mark again off them, by the
+browser's rule, and solves the ramp on those numbers. The two agree exactly.
 
 The consequence, and it is a real one: **rebuilding can retire a mark id.** A
 project saved against an older build that named a now-unused mark loses that
@@ -272,13 +309,14 @@ What you are checking:
 
 Two ceilings, because they answer different questions.
 
-- **160 KB per set** — a set is fetched only when it is picked, so this is what
+- **2.75 MB per set** — a set is fetched only when it is picked, so this is what
   a visitor actually downloads. Watch it when a set gains marks.
-- **512 KB total** — what the repository and the deployment carry. Watch it when
+- **3 MB total** — what the repository and the deployment carry. Watch it when
   a set is added.
 
-Current: 242 KB across five sets, the largest being 1812 press at 110 KB for 125
-marks. `apps/glyph-art/scripts/budget.mjs` fails the build on either.
+Current: 2.6 MB across four sets — 1812 at about 2.5 MB for 2880 marks, the
+hand-picked sets at 23–56 KB each. `apps/glyph-art/scripts/budget.mjs` fails
+the build on either.
 
 ---
 
@@ -287,16 +325,18 @@ marks. `apps/glyph-art/scripts/budget.mjs` fails the build on either.
 1. Clean the background off the scans. This is the step that decides everything.
 2. Put them in `assets/glyph-pages/<set-id>/`.
 3. Add the set to the `sets` array in `scripts/build-glyph-presets.mjs`, with a
-   label and a pool size.
+   label and either a pool size or `every: true`. A set of thousands of marks
+   also wants `maxEdge` and `quality`, or it will not fit the budget.
 4. `node scripts/harvest-glyphs.mjs <set-id> assets/glyph-pages/<set-id>/*.png`
 5. `node scripts/build-glyph-presets.mjs --sheet proof`
 6. Look at the sheet. If a level is muddy, the usual cause is a page that needed
    more cleaning, not a threshold that needs moving.
-7. `pnpm check`, then commit — the generated module and
+7. `pnpm check`, then commit — the two generated modules and
    `apps/glyph-art/public/presets/<set-id>/` only. The pages and the candidates
    stay out of git.
 
-Mixing sources works: hand-picked scans and harvested ones can sit in the same
-`assets/glyph-presets/<set-id>/` directory, and the builder treats them alike.
-That is exactly how the **1812** set is built — sixteen scans chosen by hand,
-plus twenty-six added later, all solved onto one ladder.
+Mixing sources works: hand-picked scans go in `assets/glyph-presets/<set-id>/`,
+harvested ones in its `harvested/` subdirectory, and the builder treats them
+alike. That is exactly how the **1812** set is built — forty-two scans chosen by
+hand, plus the 2839 marks cut from four newspaper pages, all dealt onto one
+ladder.

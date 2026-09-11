@@ -22,12 +22,17 @@ if (gzipTotal > limit) throw new Error(`glyph art exceeds the ${limit}-byte gzip
 //
 // Two ceilings, because they answer different questions. A set is fetched only
 // when it is picked, so what a visitor actually downloads is *one set* — that
-// is the number that has to stay small, and it is the one to watch when a set
-// gains marks. The total is what the repository and the deployment carry, and
-// it is the one to watch when a set is added.
+// is the number to watch when a set gains marks. The total is what the
+// repository and the deployment carry, and it is the one to watch when a set
+// is added.
+//
+// The per-set ceiling is set by the 1812 set, which prints every one of its
+// nearly three thousand marks: about two and a half megabytes of sheets, where
+// each hand-picked set is tens of kilobytes. Growing it further is a decision
+// about what a visitor waits for, not a number to nudge until the build passes.
 const presetRoot = path.join(output, "presets");
-const perSetLimit = 160 * 1024;
-const totalLimit = 512 * 1024;
+const perSetLimit = 2816 * 1024;
+const totalLimit = 3072 * 1024;
 let presetBytes = 0;
 let presetCount = 0;
 
@@ -38,7 +43,7 @@ for (const set of await readdir(presetRoot)) {
     bytes += (await readFile(path.join(presetRoot, set, name))).byteLength;
     count += 1;
   }
-  console.log(`  ${set.padEnd(22)} ${String(bytes).padStart(7)} bytes  ${count} marks`);
+  console.log(`  ${set.padEnd(22)} ${String(bytes).padStart(7)} bytes  ${count} sheet${count === 1 ? "" : "s"}`);
   if (bytes > perSetLimit) {
     throw new Error(`preset "${set}" exceeds the ${perSetLimit}-byte per-set target.`);
   }

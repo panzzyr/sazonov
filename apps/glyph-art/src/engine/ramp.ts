@@ -18,6 +18,7 @@
  * Nothing here touches the DOM, so the ramp is unit-testable without a canvas.
  */
 
+import { bandGlyphs } from "../presets";
 import { minMarkSize, type Band, type Settings } from "../types";
 
 /** The tone a band represents: its centre, 0 at the lightest, 1 at the darkest. */
@@ -93,7 +94,8 @@ export function solveRamp(settings: Settings, lookup: DensityLookup): SolvedBand
   return settings.bands.map((band, index) => {
     const tone = bandCenter(index, settings.bands.length);
     const coverage = coverageFor(tone, settings.weight, settings.peak);
-    const reference = band.glyphs.length ? lookup(band.glyphs[0]) : undefined;
+    const marks = bandGlyphs(band);
+    const reference = marks.length ? lookup(marks[0]) : undefined;
 
     if (band.size !== null) {
       const size = clampSize(band.size, ceiling);
@@ -139,7 +141,7 @@ export function fitPeak(settings: Settings, lookup: DensityLookup) {
   settings.bands.forEach((band, index) => {
     const tone = bandCenter(index, settings.bands.length) ** settings.weight;
     if (tone <= 0) return;
-    for (const id of band.glyphs) {
+    for (const id of bandGlyphs(band)) {
       const mark = lookup(id);
       if (!mark || mark.density <= 0) continue;
       const reach = cellCoverage(mark.density, mark.aspect) * settings.maxSize ** 2;

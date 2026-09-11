@@ -5,6 +5,10 @@
 // Source originals stay out of git; only the converted marks and the generated
 // module are committed, so glyph art deploys as a self-contained static site.
 //
+// A set's marks are written as a few sprite sheets rather than one file each.
+// The 1812 set prints every one of its nearly three thousand marks, and three
+// thousand requests is half a minute of an empty ramp; two sheets are two.
+//
 //   node scripts/build-glyph-presets.mjs
 //
 // Two things happen here that cannot happen in the browser.
@@ -39,6 +43,7 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const sourceRoot = path.join(root, "assets/glyph-presets");
 const assetRoot = path.join(root, "apps/glyph-art/public/presets");
 const modulePath = path.join(root, "apps/glyph-art/src/generatedPresets.ts");
+const metricsPath = path.join(root, "apps/glyph-art/src/generatedPresetMetrics.ts");
 
 /** Marks print at most 24 px across, so this is already generous headroom. */
 const MAX_EDGE = 128;
@@ -72,34 +77,43 @@ const MIN_STROKE_PIXELS = 1.1;
  * How many marks a level carries, per set. The darkest levels carry the most.
  *
  * A pool is not a fallback list: every mark in it prints, cycling cell by cell,
- * so the pool size *is* how varied that level looks. Bigger is better and the
- * only limits are real ones — how much material the set has, and the twelve
- * marks a band can hold in a saved project.
+ * so the pool size *is* how varied that level looks. Bigger is better, and the
+ * limit is the material: a set of fourteen scans cannot fill a level of ten.
  */
 const POOL = { normal: 2, dark: 4 };
 
 /** Levels from this index up count as the darkest. */
 const DARK_FROM = 9;
 
-/** A band in a saved project holds at most this many marks. See projectState. */
-const POOL_CAP = 12;
-
 /** No mark serves more than this many levels, or the set reads as one mark. */
 const MAX_REUSE = 3;
 
+/**
+ * How many of an `every` set's densest marks the darkest level is anchored on.
+ *
+ * `solvePeak` sets the ink of the darkest level so that this many marks still
+ * fit inside the cell. Higher gives the darkest level more marks to cycle
+ * through and a lighter top to the ramp; the two are the same trade.
+ */
+const EVERY_ANCHOR = 24;
+
+/**
+ * The sets, in the order the tool lists them.
+ *
+ * `every` is for a set with more material than a ramp has places: instead of
+ * choosing a few unlike marks per level, every mark that can print anywhere is
+ * dealt onto exactly one level. The 1812 set is hand-picked scans plus the
+ * case of type cut from four newspaper pages, and it prints all of it.
+ */
 const sets = [
   { id: "eighteenth-century", label: "18th century" },
-  { id: "eighteen-twelve", label: "1812", pool: { normal: 4, dark: 6 } },
-  { id: "great-war", label: "Great War" },
-  { id: "nineteen-forty-one", label: "1941" },
-  {
-    id: "eighteen-twelve-press",
-    label: "1812 press",
-    // Cut whole out of four newspaper pages by scripts/harvest-glyphs.mjs, so
-    // the material is thousands of sorts rather than a few dozen: this is the
-    // set that can actually fill a level to the cap.
-    pool: { normal: 10, dark: 12 },
-  },
+  // Nearly three thousand marks: lossless sheets would be five and a half
+  // megabytes. Lossy at 80 is under half that, and ink on paper is the kind of
+  // picture it barely touches. 96 px is still over three times the size a
+  // mark prints at on the default frame.
+  { id: "eighteen-twelve", label: "1812 · Patriotic War", every: true, maxEdge: 96, quality: 80 },
+  { id: "great-war", label: "1914 · First World War" },
+  { id: "nineteen-forty-one", label: "1941 · Great Patriotic War" },
 ];
 
 /* ---------------------------------------------------------------- measuring */
@@ -112,7 +126,7 @@ const sets = [
  * and ink. Trimming happens on the alpha, where the background is a true zero,
  * rather than on the negated image where it is white.
  */
-async function normalize(sourceFile) {
+async function normalize(sourceFile, maxEdge = MAX_EDGE) {
   const ink = sharp(sourceFile).ensureAlpha().extractChannel("alpha");
   const trimmed = await ink
     .trim({ background: "#000000", threshold: Math.round(INK_FLOOR * 255) })
@@ -121,8 +135,8 @@ async function normalize(sourceFile) {
 
   return sharp(trimmed)
     .resize({
-      width: MAX_EDGE,
-      height: MAX_EDGE,
+      width: maxEdge,
+      height: maxEdge,
       fit: "inside",
       withoutEnlargement: true,
       kernel: "lanczos3",
@@ -356,7 +370,7 @@ function assignLevels(marks, peak, pool) {
 
   for (const level of order) {
     const coverage = coverageFor(bandCenter(level), peak);
-    const want = Math.min(POOL_CAP, level >= DARK_FROM ? pool.dark : pool.normal);
+    const want = level >= DARK_FROM ? pool.dark : pool.normal;
 
     const ranked = marks
       .map((mark) => ({ mark, value: score(mark, coverage) }))
@@ -425,142 +439,341 @@ function assignLevels(marks, peak, pool) {
   return levels;
 }
 
+/**
+ * Deals every mark of a set onto exactly one level.
+ *
+ * For a set with more material than the ramp has places. Nothing is chosen
+ * and nothing is left out: each mark that can print anywhere prints somewhere,
+ * and a level's pool is simply every mark dealt to it.
+ *
+ * Darkest level first, densest marks first, for the same reason `assignLevels`
+ * goes darkest first: only the solid marks can reach the dark end inside the
+ * size ceiling, and they have to be claimed before the light levels, where
+ * anything fits, take them. Each level takes an even share of what is left, so
+ * the pools stay comparable in size; a dark level with fewer marks that reach
+ * it takes all of them and leaves a larger share to the rest.
+ *
+ * Dealing densest-first also keeps a level's marks close to one size. Every
+ * mark on a level prints the same ink, so a sparse mark prints large and a
+ * solid one small; marks of similar coverage print at similar sizes, and a
+ * level reads as one texture rather than as a scatter of large and tiny.
+ *
+ * The first mark of a level is the one that prints it best, because the ramp
+ * solver measures the level's size from it. The order of the rest does not
+ * matter — each cell picks its own from the whole pool.
+ */
+function dealEvery(marks, peak) {
+  const levels = Array.from({ length: LEVELS }, () => []);
+  const left = new Set(marks);
+
+  for (let level = LEVELS - 1; level >= 0; level -= 1) {
+    const coverage = coverageFor(bandCenter(level), peak);
+    const eligible = [...left]
+      .filter((mark) => score(mark, coverage) > 0)
+      .sort((a, b) => cellCoverage(b) - cellCoverage(a));
+    const share = Math.ceil(left.size / (level + 1));
+    for (const mark of eligible.slice(0, share)) {
+      levels[level].push(mark);
+      left.delete(mark);
+    }
+  }
+
+  // A mark the even shares passed over still goes wherever it prints best. One
+  // that prints nowhere — too sparse to reach even the lightest level inside
+  // the ceiling — is the only thing left out.
+  for (const mark of left) {
+    let best = -1;
+    let bestValue = 0;
+    for (let level = 0; level < LEVELS; level += 1) {
+      const value = score(mark, coverageFor(bandCenter(level), peak));
+      if (value > bestValue) {
+        bestValue = value;
+        best = level;
+      }
+    }
+    if (best >= 0) levels[best].push(mark);
+  }
+
+  return levels.map((level, index) => {
+    const coverage = coverageFor(bandCenter(index), peak);
+    let reference = level[0];
+    for (const mark of level) {
+      if (score(mark, coverage) > score(reference, coverage)) reference = mark;
+    }
+    return [reference, ...level.filter((mark) => mark !== reference)];
+  });
+}
+
 /* ------------------------------------------------------------------ writing */
+
+/** A sheet is at most this many pixels on a side. */
+const SHEET_EDGE = 2048;
+
+/** Paper between marks on a sheet, so a scaled draw never samples a neighbour. */
+const GUTTER = 2;
+
+/** Image files directly inside a directory, in a stable order. */
+async function imagesIn(directory) {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  return entries
+    .filter((entry) => entry.isFile() && /\.(png|jpe?g|webp|tiff?)$/i.test(entry.name))
+    .map((entry) => path.join(directory, entry.name))
+    .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+}
+
+/**
+ * Packs a set's marks onto sprite sheets and writes them.
+ *
+ * Shelf packing, tallest first: marks are all roughly letter-sized, so a shelf
+ * wastes little, and the layout depends only on the marks — a rebuild of the
+ * same set writes the same bytes. Each mark gets its sheet and position.
+ *
+ * Not additive: a mark dropped from the source, or dropped by the solve, has
+ * to disappear from the deployed set too, or the budget grows with every
+ * rebuild and `presetGlyphIds` starts naming marks nothing points at.
+ */
+async function writeSheets(setId, marks, quality) {
+  const outputDirectory = path.join(assetRoot, setId);
+  await rm(outputDirectory, { recursive: true, force: true });
+  await mkdir(outputDirectory, { recursive: true });
+
+  const order = [...marks].sort((a, b) => b.height - a.height || a.id.localeCompare(b.id));
+  const sheets = [];
+  let sheet = { width: 0, height: 0, marks: [] };
+  let x = GUTTER;
+  let y = GUTTER;
+  let shelf = 0;
+
+  for (const mark of order) {
+    if (x + mark.width + GUTTER > SHEET_EDGE) {
+      x = GUTTER;
+      y += shelf + GUTTER;
+      shelf = 0;
+    }
+    if (y + mark.height + GUTTER > SHEET_EDGE) {
+      sheets.push(sheet);
+      sheet = { width: 0, height: 0, marks: [] };
+      x = GUTTER;
+      y = GUTTER;
+      shelf = 0;
+    }
+    Object.assign(mark, { sheet: sheets.length, x, y });
+    sheet.marks.push(mark);
+    sheet.width = Math.max(sheet.width, x + mark.width + GUTTER);
+    sheet.height = Math.max(sheet.height, y + mark.height + GUTTER);
+    x += mark.width + GUTTER;
+    shelf = Math.max(shelf, mark.height);
+  }
+  if (sheet.marks.length > 0) sheets.push(sheet);
+
+  const sources = [];
+  for (const [index, entry] of sheets.entries()) {
+    const source = `presets/${setId}/sheet-${index}.webp`;
+    // Paper is white and ink is black, as every mark was normalised to.
+    await sharp({
+      create: { width: entry.width, height: entry.height, channels: 3, background: "#ffffff" },
+    })
+      .composite(entry.marks.map((mark) => ({ input: mark.buffer, left: mark.x, top: mark.y })))
+      .toColorspace("b-w")
+      .webp(quality ? { quality, effort: 6 } : { lossless: true, effort: 6 })
+      .toFile(path.join(root, "apps/glyph-art/public", source));
+    sources.push(source);
+  }
+  return sources;
+}
 
 async function buildSet(set) {
   const pool = set.pool ?? POOL;
   const sourceDirectory = path.join(sourceRoot, set.id);
-  const entries = (await readdir(sourceDirectory, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && /\.(png|jpe?g|webp|tiff?)$/i.test(entry.name))
-    .map((entry) => entry.name)
-    .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
-
-  const outputDirectory = path.join(assetRoot, set.id);
-  // Not additive: a mark dropped from the source, or dropped by the solve,
-  // has to disappear from the deployed set too, or the budget grows with
-  // every rebuild and `presetGlyphIds` starts naming files nothing points at.
-  await rm(outputDirectory, { recursive: true, force: true });
-  await mkdir(outputDirectory, { recursive: true });
+  // Hand-picked scans sit in the set's own directory; marks cut out of whole
+  // pages by harvest-glyphs.mjs sit in `harvested/` beside them. They arrive
+  // in the same shape, so from here on they are treated alike.
+  const files = [
+    ...(await imagesIn(sourceDirectory)),
+    ...(await imagesIn(path.join(sourceDirectory, "harvested"))),
+  ];
 
   const candidates = [];
   const skipped = [];
+  const seen = new Set();
 
-  for (const name of entries) {
-    const slug = name.replace(/\.[^.]+$/, "").padStart(2, "0");
-    const buffer = await normalize(path.join(sourceDirectory, name));
+  for (const file of files) {
+    const slug = path.basename(file).replace(/\.[^.]+$/, "").padStart(2, "0");
+    if (seen.has(slug)) throw new Error(`${set.id}: two marks are both called "${slug}".`);
+    seen.add(slug);
+
+    const buffer = await normalize(file, set.maxEdge);
     const metrics = await measure(buffer);
 
     // A scan this faint is not a light mark, it is a blank. Sizing it to any
     // level at all would put a mark the size of the cell where a speck belongs.
     if (!metrics || metrics.density < 0.05) {
-      skipped.push(name);
+      skipped.push(file);
       continue;
     }
 
-    candidates.push({
-      id: `preset-${set.id}-${slug}`,
-      label: `${set.label} ${slug}`,
-      source: `presets/${set.id}/${slug}.webp`,
-      buffer,
-      ...metrics,
-    });
+    candidates.push({ id: `preset-${set.id}-${slug}`, slug, buffer, ...metrics });
   }
 
-  const peak = solvePeak(candidates, pool);
-  const levels = assignLevels(candidates, peak, pool);
+  const solve = (marks) => {
+    const peak = solvePeak(marks, set.every ? { dark: EVERY_ANCHOR } : pool);
+    const levels = set.every ? dealEvery(marks, peak) : assignLevels(marks, peak, pool);
+    return { peak, levels };
+  };
 
-  // Only what actually prints is written. A harvested set offers thousands of
-  // candidates and a ramp uses a hundred of them; shipping the rest would be
-  // several megabytes of marks no band names.
-  const used = new Set(levels.flat().map((mark) => mark.id));
-  const marks = candidates.filter((mark) => used.has(mark.id));
-  for (const mark of marks) {
-    await sharp(mark.buffer)
-      .webp({ lossless: true, effort: 6 })
-      .toFile(path.join(root, "apps/glyph-art/public", mark.source));
-  }
+  // Only what actually prints is written. For a chosen set that is the point;
+  // for an `every` set it drops only the marks that print nowhere at all.
+  const first = solve(candidates);
+  const used = new Set(first.levels.flat().map((mark) => mark.id));
+  const written = candidates.filter((mark) => used.has(mark.id));
+  const sheets = await writeSheets(set.id, written, set.quality);
 
-  return { ...set, pool, peak, marks, levels, skipped, candidates: candidates.length };
+  // Then the ramp is solved again on what shipped. For a lossless sheet that
+  // is the same numbers and the same ramp. For a lossy one it is what the
+  // browser will measure, so the two agree — without it, a soft scan whose
+  // faint fringe the encoder lifts past the ink floor measures a different box
+  // in the browser than here, and prints a different tone than it was sized for.
+  await measureSheets(sheets, written);
+  const { peak, levels } = solve(written);
+  const printed = new Set(levels.flat().map((mark) => mark.id));
+  const marks = written.filter((mark) => printed.has(mark.id));
+
+  return { ...set, pool, peak, marks, levels, sheets, skipped, candidates: candidates.length };
 }
 
+/**
+ * Re-measures each mark's density and proportion off the sheets as written,
+ * by the rule the browser uses: ink above the floor bounds the box, and the
+ * density is the mean ink inside it.
+ */
+async function measureSheets(sheets, marks) {
+  const decoded = await Promise.all(sheets.map((source) =>
+    sharp(path.join(root, "apps/glyph-art/public", source))
+      .toColorspace("b-w")
+      .raw()
+      .toBuffer({ resolveWithObject: true })));
+
+  for (const mark of marks) {
+    const { data, info } = decoded[mark.sheet];
+    const ink = (x, y) => 1 - data[(y * info.width + x) * info.channels] / 255;
+    let left = Infinity;
+    let right = -1;
+    let top = Infinity;
+    let bottom = -1;
+    for (let y = mark.y; y < mark.y + mark.height; y += 1) {
+      for (let x = mark.x; x < mark.x + mark.width; x += 1) {
+        if (ink(x, y) <= INK_FLOOR) continue;
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+    if (right < left) {
+      mark.density = 0;
+      continue;
+    }
+    const boxWidth = right - left + 1;
+    const boxHeight = bottom - top + 1;
+    let sum = 0;
+    for (let y = top; y <= bottom; y += 1) {
+      for (let x = left; x <= right; x += 1) sum += ink(x, y);
+    }
+    mark.density = sum / (boxWidth * boxHeight);
+    mark.aspect = boxWidth / boxHeight;
+  }
+}
+
+/**
+ * The module the app imports. Compact on purpose: it is in the bundle, and the
+ * 1812 set alone is nearly three thousand marks. `src/presets.ts` turns it
+ * into specs and ids.
+ */
 function serialize(built) {
   const lines = [
     "// Generated by scripts/build-glyph-presets.mjs — do not edit by hand.",
     "//",
-    "// Each preset is a set of scanned marks and the twelve-level ramp solved",
-    "// for them. `peak` is the ink the darkest level asks for: it is a property",
-    "// of the set, because a set of airy letterpress cannot reach the coverage a",
-    "// solid woodblock does without overflowing its cells.",
+    "// Each preset is a set of scanned marks, the sprite sheets they are packed",
+    "// on, and the twelve-level ramp solved for them. `peak` is the ink the",
+    "// darkest level asks for: it is a property of the set, because a set of airy",
+    "// letterpress cannot reach the coverage a solid woodblock does without",
+    "// overflowing its cells. `src/presets.ts` turns this into specs and ids.",
     "",
-    'import type { GlyphSpec } from "./types";',
-    "",
-    "export type Preset = {",
+    "export type PresetData = {",
     "  id: string;",
     "  label: string;",
     "  /** Ink coverage of the darkest level, 0..1. */",
     "  peak: number;",
     "  /** Size ceiling in cells that the levels below were solved against. */",
     "  maxSize: number;",
-    "  glyphs: GlyphSpec[];",
-    "  /** Mark ids per level, lightest first. The first of each is the ramp's reference. */",
-    "  levels: string[][];",
-    "  /**",
-    "   * Ink density and proportion of each mark, measured at build time.",
-    "   *",
-    "   * The browser measures every mark again on load and *that* is what the",
-    "   * renderer uses; these are here so the levels can be checked without a",
-    "   * canvas — that no mark overflows its cell, that the ladder climbs.",
-    "   *",
-    "   * The two measure the same thing off the same pixels and agree to within",
-    "   * a fraction of a percent, which is far below the step between levels.",
-    "   * They are not identical: the browser re-rasterizes each mark to 256 px",
-    "   * with its own resampler first.",
-    "   */",
-    "  metrics: Record<string, { density: number; aspect: number }>;",
+    "  /** Sprite sheets, relative to the base URL. Black ink on white paper. */",
+    "  sheets: string[];",
+    "  /** Every mark: slug, sheet index, then x, y, width and height on that sheet. */",
+    "  marks: [string, number, number, number, number, number][];",
+    "  /** Indices into `marks` per level, lightest first. The first is the level's reference. */",
+    "  levels: number[][];",
     "};",
     "",
     `export const presetLevels = ${LEVELS};`,
     `export const presetMaxSize = ${MAX_SIZE};`,
     "",
-    "export const presets: Preset[] = [",
+    "export const presetData: PresetData[] = [",
   ];
 
   for (const set of built) {
+    const index = new Map(set.marks.map((mark, position) => [mark.id, position]));
     lines.push("  {");
     lines.push(`    id: ${JSON.stringify(set.id)},`);
     lines.push(`    label: ${JSON.stringify(set.label)},`);
     lines.push(`    peak: ${set.peak.toFixed(4)},`);
     lines.push(`    maxSize: ${MAX_SIZE},`);
-    lines.push("    glyphs: [");
+    lines.push(`    sheets: [${set.sheets.map((source) => JSON.stringify(source)).join(", ")}],`);
+    lines.push("    marks: [");
     for (const mark of set.marks) {
       lines.push(
-        `      { id: ${JSON.stringify(mark.id)}, label: ${JSON.stringify(mark.label)},`
-        + ` kind: "preset", source: ${JSON.stringify(mark.source)} },`,
+        `      [${JSON.stringify(mark.slug)}, ${mark.sheet}, ${mark.x}, ${mark.y}, ${mark.width}, ${mark.height}],`,
       );
     }
     lines.push("    ],");
     lines.push("    levels: [");
     for (const level of set.levels) {
-      lines.push(`      [${level.map((mark) => JSON.stringify(mark.id)).join(", ")}],`);
+      lines.push(`      [${level.map((mark) => index.get(mark.id)).join(", ")}],`);
     }
     lines.push("    ],");
-    lines.push("    metrics: {");
-    for (const mark of set.marks) {
-      lines.push(
-        `      ${JSON.stringify(mark.id)}: `
-        + `{ density: ${mark.density.toFixed(5)}, aspect: ${mark.aspect.toFixed(5)} },`,
-      );
-    }
-    lines.push("    },");
     lines.push("  },");
   }
 
   lines.push("];");
   lines.push("");
-  lines.push("/** Every shipped mark id, for validating untrusted project files. */");
-  lines.push("export const presetGlyphIds = new Set(presets.flatMap(");
-  lines.push("  (preset) => preset.glyphs.map((glyph) => glyph.id),");
-  lines.push("));");
+  return lines.join("\n");
+}
+
+/**
+ * Ink density and proportion of every shipped mark, in a module of its own.
+ *
+ * Only the tests import it, so it stays out of the bundle. The browser measures
+ * every mark again on load and *that* is what the renderer uses; these are here
+ * so the levels can be checked without a canvas.
+ */
+function serializeMetrics(built) {
+  const lines = [
+    "// Generated by scripts/build-glyph-presets.mjs — do not edit by hand.",
+    "//",
+    "// Ink density and proportion of every shipped mark, measured at build time,",
+    "// keyed by mark id. Imported by the tests only, so it never reaches the",
+    "// bundle: the browser measures each mark again on load, off the same pixels,",
+    "// and the renderer uses that. The two agree to a fraction of a percent.",
+    "",
+    "export const presetMetrics: Record<string, { density: number; aspect: number }> = {",
+  ];
+  for (const set of built) {
+    for (const mark of set.marks) {
+      lines.push(
+        `  ${JSON.stringify(mark.id)}: { density: ${mark.density.toFixed(5)}, aspect: ${mark.aspect.toFixed(5)} },`,
+      );
+    }
+  }
+  lines.push("};");
   lines.push("");
   return lines.join("\n");
 }
@@ -590,8 +803,13 @@ async function proofSheet(set, directory) {
     const coverage = coverageFor(bandCenter(level), set.peak);
     const originX = gap + level * (span + gap);
 
-    for (let index = 0; index < SHEET_BLOCK * SHEET_BLOCK; index += 1) {
-      const mark = pool[index % pool.length];
+    const cells = SHEET_BLOCK * SHEET_BLOCK;
+    for (let index = 0; index < cells; index += 1) {
+      // A pool deeper than the block is sampled across its whole length, so the
+      // sheet shows the range of a level rather than its first few marks.
+      const mark = pool.length > cells
+        ? pool[Math.floor((index * pool.length) / cells)]
+        : pool[index % pool.length];
       const size = sizeFor(coverage, mark);
       const long = Math.max(1, Math.round(size * SHEET_CELL));
       const markWidth = mark.aspect >= 1 ? long : Math.max(1, Math.round(long * mark.aspect));
@@ -636,23 +854,27 @@ async function main() {
   const built = [];
   for (const set of sets) built.push(await buildSet(set));
   await writeFile(modulePath, serialize(built), "utf8");
+  await writeFile(metricsPath, serializeMetrics(built), "utf8");
 
   let bytes = 0;
   for (const set of built) {
-    for (const mark of set.marks) {
-      bytes += (await readFile(path.join(root, "apps/glyph-art/public", mark.source))).byteLength;
+    let setBytes = 0;
+    for (const source of set.sheets) {
+      setBytes += (await readFile(path.join(root, "apps/glyph-art/public", source))).byteLength;
     }
+    bytes += setBytes;
     const sizes = set.levels.map(
       (level, index) => sizeFor(coverageFor(bandCenter(index), set.peak), level[0]),
     );
     const pools = set.levels.map((level) => level.length);
     console.log(
-      `${set.label.padEnd(14)} ${String(set.marks.length).padStart(3)} of `
+      `${set.label.padEnd(28)} ${String(set.marks.length).padStart(4)} of `
       + `${String(set.candidates).padStart(4)} candidates`
       + `${set.skipped.length ? `, ${set.skipped.length} blank` : ""}`
       + `  peak ${(set.peak * 100).toFixed(0)}%`
-      + `\n  sizes ${sizes.map((size) => String(Math.round(size * 100)).padStart(3)).join(" ")}`
-      + `\n  pool  ${pools.map((count) => String(count).padStart(3)).join(" ")}`,
+      + `  ${set.sheets.length} sheet${set.sheets.length === 1 ? "" : "s"}, ${(setBytes / 1024).toFixed(1)} KB`
+      + `\n  sizes ${sizes.map((size) => String(Math.round(size * 100)).padStart(4)).join(" ")}`
+      + `\n  pool  ${pools.map((count) => String(count).padStart(4)).join(" ")}`,
     );
   }
   console.log(`\npreset library: ${(bytes / 1024).toFixed(1)} KB across ${built.length} sets`);

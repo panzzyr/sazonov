@@ -50,10 +50,19 @@ export type GlyphSpec = {
   source: string;
   /** Font stack for a `text` glyph. Ignored otherwise. */
   font?: string;
+  /**
+   * Preset only: the mark's box on its sprite sheet, as x, y, width, height.
+   * Like `source`, it is taken from the build, never from a project file.
+   */
+  rect?: [number, number, number, number];
 };
 
 export type Band = {
-  /** Marks drawn from, in cycle order. Empty prints nothing — the band is paper. */
+  /**
+   * Marks drawn from, in cycle order. Empty prints nothing — the band is paper.
+   * An entry may also be a preset level reference, `level:<set>:<n>`, which
+   * stands for every mark on that level; see `presets.ts`.
+   */
   glyphs: string[];
   /**
    * Size as a fraction of the cell, or null to solve it from the tone curve.
@@ -106,6 +115,8 @@ export type HalftoneSettings = {
   inks: [string, string];
 };
 
+export type Spacing = { x: number; y: number };
+
 export type Settings = {
   mode: Mode;
   seed: number;
@@ -115,6 +126,13 @@ export type Settings = {
    * is centre-cropped by the sub-cell remainder rather than stretched.
    */
   grid: number;
+  /**
+   * Paper between marks, as a share of the mark's own cell: `x` between
+   * columns, `y` between rows. A gap keeps each mark the size `grid` gives it
+   * and moves its neighbours away, so the grid holds fewer of them — like
+   * tracking and leading in type, rather than like shrinking the letters.
+   */
+  spacing: Spacing;
   /** Lightest band first. Length is the band count, 2..24. */
   bands: Band[];
   /** Exponent of the tone curve. Higher prints lighter, lower prints heavier. */
@@ -174,6 +192,8 @@ export type MediaKind = "video" | "image";
 
 export const minGrid = 8;
 export const maxGrid = 240;
+/** A gap of two cells is already a scatter of marks; past it there is no picture. */
+export const maxSpacing = 2;
 export const minLines = 8;
 export const maxLines = 200;
 export const minGain = 0.5;
@@ -245,6 +265,7 @@ export const defaultSettings: Settings = {
   mode: "glyph",
   seed: 8471,
   grid: 72,
+  spacing: { x: 0, y: 0 },
   bands: [],
   weight: 1.45,
   peak: 1.05,

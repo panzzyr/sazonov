@@ -16,6 +16,10 @@
  * input, and a `source` it chose freely would be a path this app hands to an
  * `<img>`. Matching against `presetGlyphIds` means only paths this build
  * produced are ever loaded.
+ *
+ * A band usually holds a preset as a level reference, `level:<set>:<n>`, not
+ * as ids — see `presets.ts`. A reference is accepted only if it names a set and
+ * a level this build ships, and it carries no path at all.
  */
 
 import {
@@ -33,6 +37,7 @@ import {
   maxOutputWidth,
   maxPeak,
   maxSizeCeiling,
+  maxSpacing,
   maxSpread,
   maxWeight,
   minBands,
@@ -52,12 +57,17 @@ import {
   type HalftoneSettings,
   type Range,
   type Settings,
+  type Spacing,
 } from "./types";
 import { defaultBandGlyphs, markDefinitions, markSpecs } from "./engine/marks";
-import { presetGlyphs, presetGlyphIds } from "./presets";
+import { levelMarks, presetGlyph, presetGlyphIds } from "./presets";
 import { initialSettings } from "./store";
 
-/** A hostile or accidental file should not be able to exhaust memory. */
+/**
+ * A hostile or accidental file should not be able to exhaust memory. A band
+ * holds at most as many entries as the project holds marks; a preset level is
+ * one entry however many marks it stands for.
+ */
 const maxGlyphs = 64;
 const maxGlyphSourceBytes = 512 * 1024;
 
@@ -82,9 +92,6 @@ function readGlyphs(value: unknown): GlyphSpec[] {
   const shipped = markSpecs();
   if (!Array.isArray(value)) return shipped;
 
-  // Preset paths come from the build, never from the file being read.
-  const presetSources = new Map(presetGlyphs().map((spec) => [spec.id, spec.source]));
-
   const seen = new Set<string>();
   const glyphs: GlyphSpec[] = [];
   for (const entry of value) {
@@ -99,14 +106,19 @@ function readGlyphs(value: unknown): GlyphSpec[] {
     if (kind === "file" && !source.startsWith("data:image/")) continue;
     // A preset is a path this build hands to an `<img>`, so it is accepted by
     // identity rather than by inspection: only ids this build generated pass,
-    // and the path is taken from the generated module, never from the file.
-    if (kind === "preset" && !presetGlyphIds.has(id)) continue;
+    // and the path and box are taken from the build, never from the file.
+    if (kind === "preset") {
+      if (!presetGlyphIds.has(id)) continue;
+      seen.add(id);
+      glyphs.push(presetGlyph(id)!);
+      continue;
+    }
     seen.add(id);
     glyphs.push({
       id,
       label: typeof label === "string" && label ? label.slice(0, 40) : id,
       kind: kind as GlyphSpec["kind"],
-      source: kind === "preset" ? presetSources.get(id)! : source,
+      source,
       ...(typeof font === "string" ? { font: font.slice(0, 16) } : {}),
     });
   }
@@ -127,7 +139,9 @@ function readBands(value: unknown, known: Set<string>): Band[] | null {
       continue;
     }
     const glyphs = Array.isArray(entry.glyphs)
-      ? entry.glyphs.filter((id): id is string => typeof id === "string" && known.has(id)).slice(0, 12)
+      ? entry.glyphs
+        .filter((id): id is string => typeof id === "string" && (known.has(id) || levelMarks(id) !== undefined))
+        .slice(0, maxGlyphs)
       : [];
     const size = typeof entry.size === "number" && Number.isFinite(entry.size)
       ? Math.min(2.5, Math.max(0.01, entry.size))
@@ -135,6 +149,14 @@ function readBands(value: unknown, known: Set<string>): Band[] | null {
     bands.push({ glyphs, size });
   }
   return bands;
+}
+
+function readSpacing(value: unknown): Spacing {
+  if (!isObject(value)) return { ...defaultSettings.spacing };
+  return {
+    x: number(value.x, defaultSettings.spacing.x, 0, maxSpacing),
+    y: number(value.y, defaultSettings.spacing.y, 0, maxSpacing),
+  };
 }
 
 /** Six-digit hex only. Anything else is a string the CSS parser would guess at. */
@@ -173,6 +195,7 @@ export function parseSettings(value: unknown): Settings {
 
   settings.seed = number(incoming.seed, defaultSettings.seed, 0, 0xffff_ffff) >>> 0;
   settings.grid = Math.round(number(incoming.grid, defaultSettings.grid, minGrid, maxGrid));
+  settings.spacing = readSpacing(incoming.spacing);
   settings.weight = number(incoming.weight, defaultSettings.weight, minWeight, maxWeight);
   settings.peak = number(incoming.peak, defaultSettings.peak, minPeak, maxPeak);
   settings.maxSize = number(
@@ -223,8 +246,9 @@ export function parseSettings(value: unknown): Settings {
  * the same ramp shape rather than to nothing.
  */
 export function shareableSettings(settings: Settings): Settings {
-  // Presets stay: a preset mark is an id and a path, which is a handful of
-  // bytes, so a link to a preset ramp opens as the ramp it was shared as.
+  // Presets stay: a preset level is one reference and a preset mark an id and
+  // a path, a handful of bytes either way, so a link to a preset ramp opens
+  // as the ramp it was shared as.
   const shipped = [
     ...markSpecs(),
     ...settings.glyphs.filter((spec) => spec.kind === "preset"),
@@ -237,7 +261,7 @@ export function shareableSettings(settings: Settings): Settings {
     glyphs: shipped,
     bands: settings.bands.map((band, index) => ({
       size: band.size,
-      glyphs: band.glyphs.every((id) => shippedIds.has(id))
+      glyphs: band.glyphs.every((id) => shippedIds.has(id) || levelMarks(id) !== undefined)
         ? [...band.glyphs]
         : (fallbacks[index] ?? [markDefinitions[markDefinitions.length - 1].id]),
     })),

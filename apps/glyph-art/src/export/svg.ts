@@ -29,10 +29,10 @@
  * renderer builds in alpha.
  */
 
-import { glyphPlacements, type RenderOptions } from "../engine/render";
+import { cellGeometry, glyphPlacements, type RenderOptions } from "../engine/render";
 import { solveRamp } from "../engine/ramp";
 import { fitContour, traceContours, type Point, type Segment } from "./trace";
-import type { MeasuredGlyph } from "../engine/glyphLibrary";
+import { drawGlyph, type MeasuredGlyph } from "../engine/glyphLibrary";
 
 /**
  * How far an outline may stray from the mask, as a share of the mark's size.
@@ -103,7 +103,7 @@ function xml(value: string) {
 /**
  * The outline of one mark, in the pixels it is traced at.
  *
- * Not the mask's 256 px: an impression prints at thirty-odd pixels, and every
+ * Not the mask's own pixels: an impression prints at thirty-odd, and every
  * lattice step finer than that is detail the page cannot show but the file
  * still pays for — once per impression, now that the geometry is written out
  * rather than shared. So the mask is resampled to twice the printed size,
@@ -114,21 +114,21 @@ function xml(value: string) {
  * traces once and the rest is arithmetic.
  */
 function markOutline(glyph: MeasuredGlyph, printedWidth: number, cache: Map<string, Outline>) {
-  const bitmap = glyph.bitmap;
+  const { box } = glyph;
   const wanted = Math.max(minTraceWidth, Math.round((printedWidth * traceDetail) / 8) * 8);
-  const traceWidth = Math.min(bitmap.width, wanted);
+  const traceWidth = Math.min(box.width, wanted);
   const id = `${glyph.spec.id}:${traceWidth}`;
   const hit = cache.get(id);
   if (hit) return hit;
 
-  const traceHeight = Math.max(1, Math.round((bitmap.height * traceWidth) / bitmap.width));
+  const traceHeight = Math.max(1, Math.round((box.height * traceWidth) / box.width));
   const scratch = document.createElement("canvas");
   scratch.width = traceWidth;
   scratch.height = traceHeight;
   const context = scratch.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("This browser did not give us a 2D canvas.");
   context.imageSmoothingQuality = "high";
-  context.drawImage(bitmap, 0, 0, traceWidth, traceHeight);
+  drawGlyph(context, glyph, 0, 0, traceWidth, traceHeight);
 
   const pixels = context.getImageData(0, 0, traceWidth, traceHeight).data;
   const alpha = new Uint8ClampedArray(traceWidth * traceHeight);
@@ -198,12 +198,12 @@ function svgDocument(size: Frame, title: string, description: string, body: stri
 function glyphBody(options: SvgOptions) {
   const { settings, field, library, size } = options;
   const ramp = options.ramp ?? solveRamp(settings, library.metrics);
-  const cell = size.width / field.gridW;
+  const geometry = cellGeometry(settings, size.width, field.gridW);
   const paper = settings.invert ? "#000000" : "#ffffff";
   const cache = new Map<string, Outline>();
   const inks = new Map<string, string[]>();
 
-  for (const placement of glyphPlacements({ ...options, ink: "flat", ramp }, ramp, cell)) {
+  for (const placement of glyphPlacements({ ...options, ink: "flat", ramp }, ramp, geometry)) {
     const { glyph, width, height, centreX, centreY, rotation } = placement;
     const outline = markOutline(glyph, width, cache);
     if (outline.contours.length === 0) continue;
