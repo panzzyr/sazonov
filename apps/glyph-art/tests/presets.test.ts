@@ -31,10 +31,18 @@ const metrics = (id: string) => presetMetrics[id];
 
 const russianPresets = presets.filter((preset) => preset.variant === "Russian");
 const foreignPresets = presets.filter((preset) => preset.variant !== "Russian");
-/** The one era too small to deal every mark once; it chooses, with reuse. */
-const smallEra = findPreset("great-patriotic")!;
-const dealtPresets = russianPresets.filter((preset) => preset !== smallEra);
 const crimean = findPreset("crimean")!;
+
+/** How many levels each mark of a preset prints on. */
+function appearances(preset: (typeof presets)[number]) {
+  const count = new Map<string, number[]>();
+  preset.levels.forEach((level, index) => {
+    for (const id of level) count.set(id, [...(count.get(id) ?? []), index]);
+  });
+  return count;
+}
+
+const median = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1];
 
 describe("what the presets ship", () => {
   it("lists the eras in order, each Russian, and with its foreign print where there is some", () => {
@@ -48,7 +56,12 @@ describe("what the presets ship", () => {
       "russo-japanese-and-great",
       "russo-japanese-and-great-foreign",
       "civil",
+      "local-conflicts",
+      "local-conflicts-foreign",
       "great-patriotic",
+      "great-patriotic-german",
+      "cold-war",
+      "cold-war-foreign",
     ]);
     expect(presetEraList.map((era) => era.presets.map((preset) => preset.variant))).toEqual([
       ["Russian", "+ French"],
@@ -56,7 +69,9 @@ describe("what the presets ship", () => {
       ["Russian", "+ Ottoman"],
       ["Russian", "+ Japanese & German"],
       ["Russian"],
-      ["Russian"],
+      ["Russian", "+ Spanish, Finnish, Mongolian & Japanese"],
+      ["Russian", "+ German"],
+      ["Russian", "+ Korean, Vietnamese, Arabic, Hebrew & Dari"],
     ]);
   });
 
@@ -65,22 +80,29 @@ describe("what the presets ship", () => {
     expect(presetLevels).toBe(12);
   });
 
-  it.each(dealtPresets)("$label prints every one of its marks, each on exactly one level", (preset) => {
-    const placed = preset.levels.flat();
-    expect(new Set(placed).size).toBe(placed.length);
-    expect(placed.length).toBe(preset.glyphs.length);
-    expect(placed.length).toBeGreaterThan(2000);
+  it.each(russianPresets)("$label prints every one of its marks, and reuses one only on a dark level", (preset) => {
+    const seen = appearances(preset);
+    expect(seen.size).toBe(preset.glyphs.length);
+    expect(seen.size).toBeGreaterThan(2000);
+    for (const levels of seen.values()) {
+      expect(levels.length).toBeLessThanOrEqual(2);
+      if (levels.length === 2) expect(levels[1]).toBeGreaterThanOrEqual(9);
+    }
   });
 
-  it.each(dealtPresets)("$label gives every level a deep pool, the dark end included", (preset) => {
+  it.each(presets)("$label gives every level a deep pool", (preset) => {
+    // An empty level prints paper: a band of white across the picture's tone.
     for (const level of preset.levels) expect(level.length).toBeGreaterThanOrEqual(50);
   });
 
-  it("carries the small era on chosen marks, reused across levels", () => {
-    for (const level of smallEra.levels) expect(new Set(level).size).toBeGreaterThanOrEqual(2);
-    for (const level of smallEra.levels.slice(-3)) expect(new Set(level).size).toBeGreaterThanOrEqual(4);
-    const slots = smallEra.levels.reduce((total, level) => total + level.length, 0);
-    expect(new Set(smallEra.levels.flat()).size).toBeLessThan(slots);
+  it.each(russianPresets)("$label keeps its darkest levels about as deep as the rest", (preset) => {
+    // The darkest marks print largest; a shallow dark level is the one where
+    // repetition shows. They are topped up by reuse to the median depth.
+    const depth = median(preset.levels.slice(0, 9).map((level) => level.length));
+    for (const level of preset.levels.slice(-3)) {
+      expect(level.length).toBeGreaterThanOrEqual(Math.min(depth, 250) * 0.9);
+    }
+    for (const level of preset.levels) expect(new Set(level).size).toBe(level.length);
   });
 
   it.each(foreignPresets)("$label is its era's Russian ramp with foreign marks added", (preset) => {

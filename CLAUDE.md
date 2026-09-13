@@ -31,6 +31,7 @@ pnpm --filter @sazonov/printor exec vitest run -t "deterministic"
 pnpm --filter @sazonov/printor lint              # generates textures, then tsc --noEmit
 node --test tests/site.test.mjs                  # single site test file (needs a site build)
 pnpm build:drafts                                # site build including draft: true content
+node scripts/prepare-pages.mjs assets/glyph-pages/<group> <file.pdf|jpg|png> [--pages 1,4] [--masks]  # PDF/scan → ink on transparency (needs poppler)
 node scripts/harvest-glyphs.mjs <group> [--join <px>] [--singles] <page.png>  # cut pages into assets/glyph-presets/<group>/harvested/
 node scripts/build-glyph-presets.mjs             # rebuild the preset marks (needs assets/)
 node scripts/build-glyph-presets.mjs --sheet out # ...and print a proof sheet of every ladder
@@ -49,7 +50,7 @@ These fail the build, not just a lint warning:
   `dist/index.html` must still contain `connect-src 'none'`. glyph art's also
   caps what a preset downloads at **6 MB** — the sheets of every group it draws
   on, read off `generatedPresets.ts`; the largest era is about 4.5 MB — and the
-  sheets in total at **16 MB**, which is what the repository carries.
+  sheets in total at **24 MB**, which is what the repository carries.
 - `tests/privacy.test.ts` in **both** tools — `public/_headers` and `index.html`
   must keep `connect-src 'none'`, and no file under `src/` may contain
   `fetch`/`XMLHttpRequest`/`WebSocket`/`sendBeacon`/`EventSource` or
@@ -280,8 +281,12 @@ Russian military history: its Russian groups and, where the war left some, its
 foreign groups. Each era ships a **Russian preset** — every Russian mark dealt
 densest-to-darkest onto exactly one level, hundreds to a level — and, if it has
 foreign groups, a **foreign preset**: the same Russian ramp plus foreign marks,
-at most 30% of every level, chosen to be unlike each other and never a level's
-reference. The one era too small to deal (1941, 17 scans) chooses, with reuse.
+at most 30% of every level, an even sample of what prints there, never a
+level's reference. The darkest three levels climb from a size ceiling of 1.15
+cells to 1.45 (`DARK_CEILING`, also the preset's `maxSize`) and are topped up
+to the median depth of the rest by reusing marks at a larger size: the darkest
+marks print largest, and a shallow dark level is where repetition shows. An
+era too small to deal (under 96 marks; none ships now) chooses, with reuse.
 `generatedPresets.ts` is compact because it is in the bundle: a mark is its
 width and height, one character each, and the browser replays the shelf
 packing in `src/sheetPacking.ts` — which must match the build's `packShelves`
@@ -306,15 +311,18 @@ build, never from the file — a project file is untrusted input and that path
 goes straight into an `<img>`. Rebuilding can retire an id; a project that named
 it loses that mark and keeps the rest of its band.
 
-**Where marks are chosen — an era's foreign marks, and the small era — a
-level's marks are chosen to be unlike each other**, not to be the best-scoring
-ones. Every mark in a pool prints, cycling cell by
+**Where a small era chooses, a level's marks are chosen to be unlike each
+other**, not to be the best-scoring ones. Every mark in a pool prints, cycling cell by
 cell, so the pool size *is* how varied that level looks; ranked on quality
 alone a level of ten fills with ten impressions of the same letter. The first
 mark of each level is still the best-scoring one, because the ramp measures the
 level's size from it. Pool sizes are per set — a set of fourteen scans cannot
 fill a level of ten. A Russian ramp chooses nothing: each mark goes to exactly
-one level, and its reference is again the one that prints it best.
+one level, and its reference is again the one that prints it best. Nothing
+sampled out of whole pages — foreign marks, dark top-ups — is chosen for
+difference: the marks furthest from everything else on a page are its
+oddities (blots, blocks of type fused by `--join`), so those are an even
+sample (`spread`) that keeps the page's proportions.
 
 **Spacing is pitch, not size.** `settings.spacing` (`column gap`, `row gap`)
 adds paper between marks as a share of a mark's cell. `grid` still fixes that

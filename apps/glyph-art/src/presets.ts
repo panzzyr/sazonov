@@ -86,11 +86,22 @@ const glyphsOf = (groups: string[]) => groups.flatMap((id) => groupGlyphs.get(id
  * an era small enough to reuse marks — indices per level. The reference moves
  * to the front of its level.
  */
-function decodeLevels(levels: string | number[][], references: number[], ids: string[]): string[][] {
+function decodeLevels(
+  levels: string | number[][],
+  references: number[],
+  ids: string[],
+  extra = "",
+): string[][] {
   if (typeof levels !== "string") return levels.map((level) => level.map((index) => ids[index]));
   const decoded: string[][] = Array.from({ length: presetLevels }, () => []);
   for (let index = 0; index < levels.length; index += 1) {
     const level = presetLevelAlphabet.indexOf(levels[index]);
+    if (level >= 0) decoded[level].push(ids[index]);
+  }
+  // A mark reused on a dark level, at a larger size, to keep that level as
+  // deep as the rest.
+  for (let index = 0; index < extra.length; index += 1) {
+    const level = presetLevelAlphabet.indexOf(extra[index]);
     if (level >= 0) decoded[level].push(ids[index]);
   }
   return decoded.map((level, index) => {
@@ -107,6 +118,7 @@ export const presets: Preset[] = presetEras.flatMap((era) => {
     era.native.levels,
     era.native.references,
     nativeGlyphs.map((glyph) => glyph.id),
+    era.native.extra,
   );
   const shared = { era: era.label, peak: era.peak, maxSize: era.maxSize };
   const russian: Preset = {

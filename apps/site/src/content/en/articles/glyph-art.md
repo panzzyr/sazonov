@@ -142,10 +142,12 @@ square sit on one ramp without any of them reading two bands off.
 
 The presets are eras of Russian military history: **1700–1812** (the Northern
 and the Patriotic wars), the **Crimean War**, the **Russo-Turkish War**, the
-**Russo-Japanese and First World wars**, the **Civil War** and the **Great
-Patriotic War**. Each is the type of its war — letters, numerals, seals and
-ornaments cut out of newspapers, decrees and posters of the time — sorted onto
-twelve levels. Four eras come twice: once in Russian print alone, and once with
+**Russo-Japanese and First World wars**, the **Civil War**, the **local
+conflicts** of 1936–1940 (Spain, Khalkhin Gol, Finland), the **Great Patriotic
+War**, and **Korea, Vietnam, the Middle East and Afghanistan**. Each is the
+type of its war — letters, numerals, seals and ornaments cut out of
+newspapers, decrees and posters of the time — sorted onto twelve levels. Every
+era but the Civil War comes twice: once in Russian print alone, and once with
 the foreign print of the same war mixed in.
 
 Picking one changes the marks and the shape of their ramp, and nothing about the
@@ -155,12 +157,17 @@ put them, so you can flip between the sets to compare them.
 Every Russian mark of an era prints. Nothing is chosen and nothing is left
 out: each mark is dealt onto the one level where it prints, the densest to the
 darkest, so a level holds hundreds of different impressions and no two
-neighbouring cells at the same tone are likely to share one. The one exception
-is **1941**, which is still a couple of dozen scans; there a mark serves two or
-three levels at different sizes.
+neighbouring cells at the same tone are likely to share one.
 
-Where marks do have to be chosen — the foreign ones, and 1941's — the marks on
-a level are chosen to be **as unlike each other as possible**, not
+The darkest levels get the most care, because their marks print largest and a
+repeat there is the one the eye catches. Only the solid sorts reach that much
+ink inside a cell, so on the darkest three levels a mark may grow past its cell
+— up to a cell and a half, where the shadows are meant to knit into mass — and
+those levels are topped up to the depth of the others with marks from lighter
+levels printed again, larger.
+
+Where marks are chosen from a handful of hand-picked scans, the marks on a
+level are chosen to be **as unlike each other as possible**, not
 simply the ones that print it best. That matters more than it sounds: every mark
 in a level prints, cycling from cell to cell, so a level filled from the top of
 a ranked list ends up as ten impressions of the same letter — ten marks by the
@@ -180,8 +187,8 @@ cell the other way and inks two fifths of what its density suggests.
 
 Each set carries its own `max ink`, because that is a fact about the material:
 airy letterpress cannot cover as much of a cell as a solid woodblock without
-spilling out of it. **1941**, a handful of airy scans, is the lightest for exactly
-that reason and will not print a true black; the eras cut from whole pages are
+spilling out of it. An era of airy print is lighter for exactly that reason
+and will not print a true black; the eras cut from dense newspaper pages are
 heavier, because a case of newspaper type contains genuinely solid sorts. That is the type, not the tool.
 
 ### Foreign print
@@ -189,14 +196,17 @@ heavier, because a case of newspaper type contains genuinely solid sorts. That i
 A war is printed on both sides of it. The second preset of an era keeps its
 Russian ramp exactly and mixes in the print of the other side: *Le Moniteur
 universel* for 1812, *The London Gazette* for the Crimea, an Ottoman gazette
-for the Russo-Turkish war, and *Asahi Shimbun* and the *Deutsche
-Kriegszeitung* for 1904–1918. Foreign marks are never more than 30% of a level
-and never the mark the level is sized from, so they read as an accent in the
-Russian texture rather than a second texture on top of it.
+for the Russo-Turkish war, *Asahi Shimbun* and the *Deutsche Kriegszeitung*
+for 1904–1918, Spanish, Finnish, Mongolian and Japanese print for the
+conflicts of 1936–1940, the German press for 1941–1945, and Korean,
+Vietnamese, Arabic, Hebrew and Dari newspapers for the wars after it. Foreign
+marks are never more than 30% of a level and never the mark the level is sized
+from, so they read as an accent in the Russian texture rather than a second
+texture on top of it. They are an even sample of what each page prints, not the
+most striking of it — on a page the most striking marks are its ink blots.
 
-The price of all this is weight. An era is up to four or five megabytes of
-sheets, fetched only when you pick it, and it takes a moment on a slow
-connection.
+The price of all this is weight. An era is a few megabytes of sheets, fetched
+only when you pick it, and it takes a moment on a slow connection.
 
 Nothing recognised those letters. A page with its background removed is ink on
 transparency, so a letter *is* a connected island of ink, and finding those

@@ -1,5 +1,33 @@
 # Architecture decisions
 
+## 2026-09-14 — glyph art deepens the dark levels, and samples pages evenly
+
+- **Decision:** Three more eras — 1936–1940 (Spain, Khalkhin Gol, Finland),
+  the Great Patriotic War (now with its pages, and German), and 1950–1989
+  (Korea, Vietnam, the Middle East, Afghanistan) — each with its foreign print.
+  The darkest three levels are topped up to the median depth of the others by
+  reusing marks from lighter levels at a larger size, under a size ceiling that
+  climbs from 1.15 cells to 1.45 (`DARK_CEILING`, the presets' `maxSize`).
+  Foreign marks and dark top-ups are an even sample of what qualifies, not the
+  marks most unlike each other. Pages that are not ink on transparency — PDFs,
+  JPEGs — go through `scripts/prepare-pages.mjs` first.
+- **Alternatives:** Raise the ceiling for the initial deal instead of topping
+  up. Keep choosing foreign marks for difference. Mine the PDFs for vectors.
+- **Reason:** Dealt under one ceiling, the darkest level held a fifth of the
+  marks of the others, and its marks print largest — the repetition the eye
+  catches first. Raising the ceiling for the deal itself let the dark levels
+  take the solid marks level 8 needed, and left the Civil War with an empty
+  level 8. Choosing for difference out of thousands of page marks picks the
+  page's oddities — blots, blocks of type fused by `--join` — first. And the
+  PDFs are scans with an invisible layer of recognised text: the fonts in them
+  print nothing, so a page is rendered as it looks and levelled.
+- **Consequences:** A dark-level mark may appear on a second level, larger; the
+  level string gained an `extra` string beside it. A group can carry a `limit`,
+  taken at an even stride across its pages — 1950–1989 keeps 12,000 of the
+  93,000 marks its Russian pages cut into. The library is about 21 MB across
+  26 groups; the total budget rose to 24 MB, the per-preset one stays at 6 MB.
+  Harvesting needs poppler (`pdftoppm`, `pdfimages`) only to prepare PDFs.
+
 ## 2026-09-13 — glyph art presets are eras, Russian and with their foreign print
 
 - **Decision:** Replace the per-set presets with six eras — 1700–1812,

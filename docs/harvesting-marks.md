@@ -47,6 +47,25 @@ expedition.
 
 ---
 
+## Step 0: `prepare-pages.mjs`, for anything not yet ink on transparency
+
+```sh
+node scripts/prepare-pages.mjs assets/glyph-pages/<group> <file.pdf|.jpg|.png> [--pages 1,4] [--masks]
+```
+
+Newspaper PDFs look like vector files and almost never are: they are scans
+with an invisible layer of recognised text over them, and the fonts listed in
+the file are that layer. So a PDF page is rendered as it looks, by poppler's
+`pdftoppm` (`brew install poppler`), at 300 dpi. A PDF converted from DjVu
+keeps its type as a one-bit mask over a coloured background, which renders as
+smudges; `--masks` takes the mask alone.
+
+A page on paper — rendered, or a JPEG — then has its background taken off by
+levels: paper is the most common light value, ink the darkest half-percent,
+and everything within a margin of the paper becomes transparent. A PNG that
+already has alpha is copied as it is. Use `--pages` on a long document: a
+180-page book is not a newspaper.
+
 ## Step 1: `harvest-glyphs.mjs`
 
 ### There is no machine vision here, and none is wanted
@@ -238,24 +257,42 @@ The only marks left out are the ones that print nowhere — too sparse to reach
 even the lightest level inside the ceiling. On the shipped eras that is none.
 
 An era of fewer than 96 marks cannot give every level a pool of its own; it
-chooses, as below, and reuses a mark on up to three levels. That is 1941, for
-now.
+chooses, as below, and reuses a mark on up to three levels. No shipped era is
+that small now — 1941's scans are part of the Great Patriotic War.
+
+A group with a `limit` takes that many of its harvested marks, at an even
+stride through them, so every page gives its share. Six pages of *Pravda*
+alone cut into 67,000 marks; the 1950–1989 era keeps 12,000.
+
+### The darkest levels
+
+Dealt under one size ceiling, the darkest level got a fifth of the marks of
+the others: only the solid marks reach its ink inside one cell. And those are
+the marks that print largest, the ones the eye lands on, repeating. So the
+ceiling climbs over the darkest three levels from 1.15 cells to 1.45 — past
+the cell a mark overlaps its neighbours, which is what the shadows should do —
+and each of those levels is then topped up to the median depth of the rest
+with marks already dealt elsewhere that also print there, at a larger size. A
+mark is reused on one extra level at most.
 
 ### Foreign marks: at most 30% of a level
 
 The second preset of an era keeps the Russian ramp exactly — the same levels,
 the same peak, the same reference first on every level — and adds foreign marks
 to each level up to `FOREIGN_SHARE` of it: 3 for every 7 Russian marks. Where
-there are more foreign marks than that, the ones taken are the most unlike
-each other, which is also what mixes Japanese and German evenly into the one
-era that has both. They are chosen once on the measurements before compression,
+there are more foreign marks than that, the ones taken are an even sample of
+what prints on the level, which mixes several scripts in proportion to what
+each has. An earlier build chose the most unlike each other instead, and out
+of thousands that picks a page's oddities — ink blots, blocks of small type
+fused by `--join` — first. They are chosen once on the measurements before compression,
 so only the marks that print are written, and dealt again on the sheets as
 written.
 
 ### Within a level, marks are chosen to be unlike each other
 
-This is how an era's foreign marks are chosen, and how the small era fills its
-levels.
+This is how a small era fills its levels — a couple of dozen scans picked by
+hand, where every one is deliberate. Nothing sampled out of whole pages is
+chosen this way; see above.
 
 A pool is not a fallback list. Every mark in it prints, cycling from cell to
 cell, so **the pool size is how varied that level looks**. Filling a level from
@@ -281,14 +318,19 @@ set's variety comes from.
 
 ### What the eras hold
 
-| era | Russian marks | per level, darkest three | foreign added | peak ink | download |
+Every level is about as deep as the rest, the darkest three included — they
+are topped up by reuse.
+
+| era | Russian marks | per level | foreign added | peak ink | download, Russian; with foreign |
 | --- | --- | --- | --- | --- | --- |
-| 1700–1812 | 5191 | ~480; 481 / 299 / 85 | 733 French | 75% | 2.8 MB; 2.9 with French |
-| Crimean | 7397 | ~690; 693 / 370 / 101 | 876 English | 81% | 1.9 MB; 2.2 with English |
-| Russo-Turkish | 2763 | ~245; 245 / 229 / 90 | 791 of 1813 Ottoman | 69% | 0.4 MB; 0.6 with Ottoman |
-| Russo-Japanese & First World | 2415 | ~219; 219 / 162 / 66 | 1001 of 4463 (526 Japanese, 475 German) | 74% | 1.2 MB; 1.7 with foreign |
-| Civil | 6656 | ~673; 340 / 158 / 103 | — | 80% | 4.4 MB |
-| Great Patriotic | 17, chosen | 2; 4 / 4 / 4 | — | 63% | 0.01 MB |
+| 1700–1812 | 5191 | ~480 | 733 French | 75% | 2.8 MB; 2.9 |
+| Crimean | 7397 | ~693 | 876 English | 81% | 1.9 MB; 2.2 |
+| Russo-Turkish | 2763 | ~244 | 791 of 1813 Ottoman | 69% | 0.4 MB; 0.6 |
+| Russo-Japanese & First World | 2415 | ~219 | 1105 of 4463 (812 German, 293 Japanese) | 74% | 1.2 MB; 1.7 |
+| Civil | 6656 | ~673 | — | 80% | 4.4 MB |
+| 1936–1940 | 3741 | ~335 | 1676 of 8855 (1028 Japanese, 637 Finnish & Mongolian, 11 Spanish) | 73% | 1.7 MB; 2.3 |
+| Great Patriotic | 8408 | ~742 | 141 German | 74% | 3.1 MB; 3.2 |
+| 1950–1989 | 12,000 of 93,000 | ~1144 | 5847 of 7428 (2572 Hebrew, 2216 Arabic, 541 Dari, 471 Vietnamese, 47 Korean) | 70% | 2.0 MB; 3.9 |
 
 A set not using every one of its scans is the diversity rule working, not
 material being ignored. The three that 18th century leaves out sit 0.27–0.31
@@ -368,11 +410,11 @@ Two ceilings, because they answer different questions.
 - **6 MB per preset** — the sheets of every group a preset draws on, fetched
   only when it is picked, so this is what a visitor actually downloads. Watch it
   when an era gains pages.
-- **16 MB total** — what the repository and the deployment carry. Watch it when
+- **24 MB total** — what the repository and the deployment carry. Watch it when
   an era is added.
 
-Current: 11.9 MB across fourteen groups; the heaviest preset is the Civil War
-at 4.4 MB. `apps/glyph-art/scripts/budget.mjs` fails the build on either.
+Current: 21.2 MB across 26 groups; the heaviest preset is the Civil War at
+4.4 MB. `apps/glyph-art/scripts/budget.mjs` fails the build on either.
 
 ---
 

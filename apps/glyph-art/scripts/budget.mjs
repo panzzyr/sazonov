@@ -32,7 +32,7 @@ if (gzipTotal > limit) throw new Error(`glyph art exceeds the ${limit}-byte gzip
 // what a visitor waits for, not a number to nudge until the build passes.
 const presetRoot = path.join(output, "presets");
 const perPresetLimit = 6 * 1024 * 1024;
-const totalLimit = 16 * 1024 * 1024;
+const totalLimit = 24 * 1024 * 1024;
 
 const groupBytes = new Map();
 for (const group of await readdir(presetRoot)) {

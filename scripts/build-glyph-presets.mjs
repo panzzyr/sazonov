@@ -69,6 +69,17 @@ const WEIGHT = 1.45;
  */
 const MAX_SIZE = 1.15;
 
+/**
+ * Size ceiling of the darkest level, in cells; the three darkest levels climb
+ * to it from `MAX_SIZE`. Only the solid marks reach a dark level's ink inside
+ * one cell, so under the plain ceiling the darkest level had a fifth of the
+ * marks of the others — and those are the largest marks on the picture, the
+ * ones the eye lands on, repeating. Past the cell a mark overlaps its
+ * neighbours, which on the darkest level is what it should do: the shadows
+ * knit into mass. It is also the preset's `maxSize`, so nothing is clamped.
+ */
+const DARK_CEILING = 1.45;
+
 /** Below this a mark is grit rather than a mark. */
 const MIN_SIZE = 0.14;
 
@@ -123,8 +134,31 @@ const groups = [
   { id: "japanese" },
   { id: "german" },
   { id: "civil-war" },
+  { id: "local-conflicts" },
+  { id: "spanish" },
+  { id: "finnish-mongolian", limit: 3000 },
+  { id: "japanese-1939" },
+  { id: "great-patriotic" },
   { id: "nineteen-forty-one", lossless: true },
+  { id: "german-1941" },
+  // Six pages of Pravda and fourteen of 1967 alone cut into 93,000 marks —
+  // twenty-odd megabytes of sheets for one preset.
+  { id: "cold-war", limit: 12000 },
+  { id: "korean" },
+  { id: "vietnamese" },
+  { id: "arabic", limit: 3000 },
+  { id: "hebrew", limit: 3000 },
+  { id: "dari" },
 ];
+
+/**
+ * A group's `limit` caps its harvested marks, taken at an even stride through
+ * them. Harvested files are named by page, so the stride takes the same share
+ * of every page rather than the first pages whole. Hand-picked scans are
+ * always kept. For a Russian group the limit is what a visitor downloads; for
+ * a foreign one it is only what the builder chooses among, since a foreign
+ * preset takes at most 30% of a level anyway.
+ */
 
 /** The eras, in the order the tool lists them. */
 const eras = [
@@ -157,7 +191,32 @@ const eras = [
     },
   },
   { id: "civil", label: "1917–1922 · Civil War", native: ["civil-war"] },
-  { id: "great-patriotic", label: "1941–1945 · Great Patriotic War", native: ["nineteen-forty-one"] },
+  {
+    id: "local-conflicts",
+    label: "1936–1940 · Spain, Khalkhin Gol, Finland",
+    native: ["local-conflicts"],
+    foreign: {
+      id: "local-conflicts-foreign",
+      label: "+ Spanish, Finnish, Mongolian & Japanese",
+      groups: ["spanish", "finnish-mongolian", "japanese-1939"],
+    },
+  },
+  {
+    id: "great-patriotic",
+    label: "1941–1945 · Great Patriotic War",
+    native: ["great-patriotic", "nineteen-forty-one"],
+    foreign: { id: "great-patriotic-german", label: "+ German", groups: ["german-1941"] },
+  },
+  {
+    id: "cold-war",
+    label: "1950–1989 · Korea, Vietnam, Middle East, Afghanistan",
+    native: ["cold-war"],
+    foreign: {
+      id: "cold-war-foreign",
+      label: "+ Korean, Vietnamese, Arabic, Hebrew & Dari",
+      groups: ["korean", "vietnamese", "arabic", "hebrew", "dari"],
+    },
+  },
 ];
 
 /**
@@ -366,6 +425,10 @@ function solvePeak(marks, pool) {
 
 const coverageFor = (tone, peak) => peak * tone ** WEIGHT;
 
+/** The size ceiling of a level: `MAX_SIZE`, climbing to `DARK_CEILING` over the darkest three. */
+const ceilingFor = (level) => MAX_SIZE
+  + (DARK_CEILING - MAX_SIZE) * Math.max(0, (level - (DARK_FROM - 1)) / (LEVELS - DARK_FROM));
+
 /** Long-side size in cells a mark needs to print a given ink coverage. */
 const sizeFor = (coverage, mark) => Math.sqrt(coverage / cellCoverage(mark));
 
@@ -378,10 +441,10 @@ const sizeFor = (coverage, mark) => Math.sqrt(coverage / cellCoverage(mark));
  * width is the soft one: a mark of fine rules reduced to a third of a cell is
  * a grey smudge long before it is too small to see.
  */
-function score(mark, coverage) {
+function score(mark, coverage, ceiling = MAX_SIZE) {
   if (!(mark.density > 0)) return 0;
   const size = sizeFor(coverage, mark);
-  if (size < MIN_SIZE || size > MAX_SIZE) return 0;
+  if (size < MIN_SIZE || size > ceiling) return 0;
 
   // Marks read best somewhere near two-thirds of the cell: smaller and the
   // shape is guessed at, larger and it crowds its neighbours.
@@ -402,9 +465,9 @@ function score(mark, coverage) {
  * everything already picked, with print quality as a weight. `chosen` seeds the
  * distances — the marks already on the level — and is not returned.
  */
-function pickUnlike(eligible, want, coverage, chosen = [], uses = null) {
+function pickUnlike(eligible, want, coverage, chosen = [], uses = null, ceiling = MAX_SIZE) {
   if (eligible.length <= want) return [...eligible];
-  const value = eligible.map((mark) => score(mark, coverage) - (uses ? 0.28 * uses.get(mark) : 0));
+  const value = eligible.map((mark) => score(mark, coverage, ceiling) - (uses ? 0.28 * uses.get(mark) : 0));
   const best = Math.max(...value);
   const nearest = eligible.map((mark) => Math.min(Infinity, ...chosen.map((other) => unlike(mark.signature, other.signature))));
   const taken = new Array(eligible.length).fill(false);
@@ -461,6 +524,11 @@ function dealEvery(marks, peak) {
 
   for (let level = LEVELS - 1; level >= 0; level -= 1) {
     const coverage = coverageFor(bandCenter(level), peak);
+    // Dealt under the plain ceiling. Dealt under the raised dark ceilings, the
+    // three darkest levels take their even shares first and densest-first —
+    // exactly the solid marks the level below them needs — and on the Civil
+    // War that left level 8 with none at all. The dark levels are deepened
+    // afterwards, by `topUpDark`, from marks that are already placed.
     const eligible = [...left]
       .filter((mark) => score(mark, coverage) > 0)
       .sort((a, b) => cellCoverage(b) - cellCoverage(a));
@@ -486,16 +554,72 @@ function dealEvery(marks, peak) {
     if (best >= 0) levels[best].push(mark);
   }
 
-  return levels.map((level, index) => withReferenceFirst(level, coverageFor(bandCenter(index), peak)));
+  const extra = topUpDark(levels, marks, peak);
+  return {
+    levels: levels.map((level, index) => withReferenceFirst(level, coverageFor(bandCenter(index), peak), ceilingFor(index))),
+    extra,
+  };
 }
 
-function withReferenceFirst(level, coverage) {
-  if (level.length === 0) return level;
-  let reference = level[0];
-  for (const mark of level) {
-    if (score(mark, coverage) > score(reference, coverage)) reference = mark;
+/**
+ * An even sample of `want` from `list`, which is sorted: every part of it
+ * contributes its share.
+ *
+ * This, not `pickUnlike`, is how marks are sampled out of a whole page. The
+ * marks furthest in shape from everything else on a page are its oddities — an
+ * ink blot, a block of small type fused by `--join`, a torn letter — so
+ * choosing for difference out of thousands fills a level with exactly those.
+ * An even sample keeps the proportions of the page: a little of its rubbish,
+ * a great deal of its type.
+ */
+function spread(list, want) {
+  if (list.length <= want) return [...list];
+  return Array.from({ length: want }, (_, index) => list[Math.floor((index * list.length) / want)]);
+}
+
+/**
+ * Deepens the darkest levels to the depth of the rest, by reuse.
+ *
+ * Even with the ceiling raised, fewer marks reach the darkest ink than any
+ * other, and a dark level is where a mark prints largest and repeats most
+ * visibly. So each of the darkest three is topped up to the median depth of
+ * the lighter levels with marks already dealt elsewhere that also print there
+ * — at a larger size, so a second impression of a mark is not the same
+ * impression — sampled evenly across what qualifies. A mark is reused on one
+ * extra level at most. Returns mark → its extra level.
+ */
+function topUpDark(levels, marks, peak) {
+  const extra = new Map();
+  const depths = levels.slice(0, DARK_FROM).map((level) => level.length).sort((a, b) => a - b);
+  const target = depths[depths.length >> 1] ?? 0;
+
+  for (let level = LEVELS - 1; level >= DARK_FROM; level -= 1) {
+    const want = target - levels[level].length;
+    if (want <= 0) continue;
+    const coverage = coverageFor(bandCenter(level), peak);
+    const ceiling = ceilingFor(level);
+    const onLevel = new Set(levels[level]);
+    const eligible = marks
+      .filter((mark) => !onLevel.has(mark) && !extra.has(mark) && score(mark, coverage, ceiling) > 0)
+      .sort((a, b) => cellCoverage(b) - cellCoverage(a));
+    for (const mark of spread(eligible, want)) {
+      levels[level].push(mark);
+      extra.set(mark, level);
+    }
   }
-  return [reference, ...level.filter((mark) => mark !== reference)];
+  return extra;
+}
+
+function withReferenceFirst(level, coverage, ceiling = MAX_SIZE) {
+  if (level.length === 0) return level;
+  // The reference must print inside the plain ceiling: the ramp sizes the
+  // level from it, and every other mark is corrected against it.
+  let reference = null;
+  for (const mark of level) {
+    const value = score(mark, coverage, Math.min(ceiling, MAX_SIZE)) || score(mark, coverage, ceiling) * 0.01;
+    if (!reference || value > reference.value) reference = { mark, value };
+  }
+  return [reference.mark, ...level.filter((mark) => mark !== reference.mark)];
 }
 
 /**
@@ -536,8 +660,9 @@ function assignLevels(marks, peak) {
  * Each level takes at most as many foreign marks as keeps them under
  * `FOREIGN_SHARE` of it, so the Russian marks stay the body of every level and
  * the ramp's reference — the first mark — stays Russian. Where the foreign
- * material is more than that allows, the marks taken are the most unlike each
- * other, which also mixes the scripts of an era with two.
+ * material is more than that allows, the marks taken are an even sample of
+ * what prints there (see `spread`), which also mixes the scripts of an era
+ * with several in proportion to what each of them has.
  */
 function dealForeign(marks, peak, nativeLevels) {
   const levels = Array.from({ length: LEVELS }, () => []);
@@ -545,8 +670,11 @@ function dealForeign(marks, peak, nativeLevels) {
   for (let level = LEVELS - 1; level >= 0; level -= 1) {
     const cap = Math.floor((nativeLevels[level].length * FOREIGN_SHARE) / (1 - FOREIGN_SHARE));
     const coverage = coverageFor(bandCenter(level), peak);
-    const eligible = marks.filter((mark) => !used.has(mark) && score(mark, coverage) > 0);
-    const picked = pickUnlike(eligible, cap, coverage);
+    const ceiling = ceilingFor(level);
+    const eligible = marks
+      .filter((mark) => !used.has(mark) && score(mark, coverage, ceiling) > 0)
+      .sort((a, b) => cellCoverage(b) - cellCoverage(a));
+    const picked = spread(eligible, cap);
     for (const mark of picked) used.add(mark);
     levels[level] = picked;
   }
@@ -610,7 +738,12 @@ async function imagesIn(directory) {
 /** Reads a group's scans — hand-picked and harvested alike — and measures them. */
 async function loadGroup(group) {
   const directory = path.join(sourceRoot, group.id);
-  const files = [...(await imagesIn(directory)), ...(await imagesIn(path.join(directory, "harvested")))];
+  let harvested = await imagesIn(path.join(directory, "harvested"));
+  if (group.limit && harvested.length > group.limit) {
+    const all = harvested;
+    harvested = Array.from({ length: group.limit }, (_, index) => all[Math.floor((index * all.length) / group.limit)]);
+  }
+  const files = [...(await imagesIn(directory)), ...harvested];
   const marks = [];
   const skipped = [];
   const seen = new Set();
@@ -717,7 +850,9 @@ async function buildEra(era, loaded) {
 
   const small = native.length < SMALL_ERA;
   const peak = solvePeak(native, small ? POOL : { dark: EVERY_ANCHOR });
-  const nativeLevels = small ? assignLevels(native, peak) : dealEvery(native, peak);
+  const dealt = small ? { levels: assignLevels(native, peak), extra: new Map() } : dealEvery(native, peak);
+  const nativeLevels = dealt.levels;
+  const nativeExtra = dealt.extra;
 
   let foreign = null;
   if (era.foreign) {
@@ -734,16 +869,26 @@ async function buildEra(era, loaded) {
     foreign = { ...era.foreign, groups: foreignGroups, marks, levels: dealForeign(marks, peak, nativeLevels) };
   }
 
-  return { ...era, small, peak, nativeGroups, native, nativeLevels, foreign };
+  return { ...era, small, peak, nativeGroups, native, nativeLevels, nativeExtra, foreign };
 }
 
 /* ------------------------------------------------------------- serialising */
 
-/** One character per mark: the level it prints on, or `-` for none. */
-function levelString(marks, levels) {
+/**
+ * One character per mark: the level it prints on, or `-` for none. A mark
+ * reused on a dark level is in `extra`, and its first level is the one here.
+ */
+function levelString(marks, levels, extra = new Map()) {
   const level = new Map();
-  levels.forEach((pool, index) => pool.forEach((mark) => level.set(mark, index)));
+  levels.forEach((pool, index) => pool.forEach((mark) => {
+    if (extra.get(mark) !== index) level.set(mark, index);
+  }));
   return marks.map((mark) => (level.has(mark) ? LEVEL_ALPHABET[level.get(mark)] : "-")).join("");
+}
+
+/** One character per mark: the dark level it is reused on, or `-`. */
+function extraString(marks, extra) {
+  return marks.map((mark) => (extra.has(mark) ? LEVEL_ALPHABET[extra.get(mark)] : "-")).join("");
 }
 
 /**
@@ -784,12 +929,14 @@ function serialize(groupsBuilt, erasBuilt) {
     "    levels: string | number[][];",
     "    /** Per level, the index of the mark the ramp measures the level from. */",
     "    references: number[];",
+    "    /** One character per mark: a dark level it prints on as well, at a larger size, or `-`. */",
+    "    extra: string;",
     "  };",
     "  foreign?: { id: string; label: string; groups: string[]; levels: string };",
     "};",
     "",
     `export const presetLevels = ${LEVELS};`,
-    `export const presetMaxSize = ${MAX_SIZE};`,
+    `export const presetMaxSize = ${DARK_CEILING};`,
     `export const presetSizeAlphabet = ${JSON.stringify(SIZE_ALPHABET)};`,
     `export const presetLevelAlphabet = ${JSON.stringify(LEVEL_ALPHABET)};`,
     "",
@@ -811,13 +958,14 @@ function serialize(groupsBuilt, erasBuilt) {
     lines.push(`    id: ${JSON.stringify(era.id)},`);
     lines.push(`    label: ${JSON.stringify(era.label)},`);
     lines.push(`    peak: ${era.peak.toFixed(4)},`);
-    lines.push(`    maxSize: ${MAX_SIZE},`);
+    lines.push(`    maxSize: ${DARK_CEILING},`);
     lines.push("    native: {");
     lines.push(`      groups: ${JSON.stringify(era.native.length ? era.nativeGroups.map((group) => group.id) : [])},`);
     lines.push(era.small
       ? `      levels: ${JSON.stringify(era.nativeLevels.map((level) => level.map((mark) => index.get(mark))))},`
-      : `      levels: ${JSON.stringify(levelString(era.native, era.nativeLevels))},`);
+      : `      levels: ${JSON.stringify(levelString(era.native, era.nativeLevels, era.nativeExtra))},`);
     lines.push(`      references: ${JSON.stringify(era.nativeLevels.map((level) => (level.length ? index.get(level[0]) : -1)))},`);
+    lines.push(`      extra: ${JSON.stringify(era.small ? "" : extraString(era.native, era.nativeExtra))},`);
     lines.push("    },");
     if (era.foreign) {
       lines.push(
