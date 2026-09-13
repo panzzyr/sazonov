@@ -31,7 +31,7 @@ pnpm --filter @sazonov/printor exec vitest run -t "deterministic"
 pnpm --filter @sazonov/printor lint              # generates textures, then tsc --noEmit
 node --test tests/site.test.mjs                  # single site test file (needs a site build)
 pnpm build:drafts                                # site build including draft: true content
-node scripts/harvest-glyphs.mjs <set> <page.png>  # cut scanned pages into assets/glyph-presets/<set>/harvested/
+node scripts/harvest-glyphs.mjs <group> [--join <px>] [--singles] <page.png>  # cut pages into assets/glyph-presets/<group>/harvested/
 node scripts/build-glyph-presets.mjs             # rebuild the preset marks (needs assets/)
 node scripts/build-glyph-presets.mjs --sheet out # ...and print a proof sheet of every ladder
 SITE_URL=https://preview.example.com pnpm build  # override production origin
@@ -47,10 +47,9 @@ These fail the build, not just a lint warning:
 - `apps/printor/scripts/budget.mjs` and `apps/glyph-art/scripts/budget.mjs` — each
   tool's `dist/assets/*.{js,css}` must stay under 300 KB gzip, and its
   `dist/index.html` must still contain `connect-src 'none'`. glyph art's also
-  caps `dist/presets/` at **2.75 MB per set** — a set is fetched only when it is
-  picked, so that is what a visitor downloads; 1812, which prints every one of
-  its nearly three thousand marks, is about 2.5 MB and the hand-picked sets are
-  tens of KB — and **3 MB in total**, which is what the repository carries.
+  caps what a preset downloads at **6 MB** — the sheets of every group it draws
+  on, read off `generatedPresets.ts`; the largest era is about 4.5 MB — and the
+  sheets in total at **16 MB**, which is what the repository carries.
 - `tests/privacy.test.ts` in **both** tools — `public/_headers` and `index.html`
   must keep `connect-src 'none'`, and no file under `src/` may contain
   `fetch`/`XMLHttpRequest`/`WebSocket`/`sendBeacon`/`EventSource` or
@@ -115,7 +114,7 @@ attribute means changing all of them.
 | `apps/glyph-art/src/generatedPresets.ts` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` (scans, not in git) |
 | `apps/glyph-art/src/generatedPresetMetrics.ts` | `scripts/build-glyph-presets.mjs` | the same; imported by tests only |
 | `apps/glyph-art/public/presets/` | `scripts/build-glyph-presets.mjs` | `assets/glyph-presets/` |
-| `assets/glyph-presets/<set>/harvested/` | `scripts/harvest-glyphs.mjs` | `assets/glyph-pages/<set>/` (scanned pages, not in git) |
+| `assets/glyph-presets/<group>/harvested/` | `scripts/harvest-glyphs.mjs` | `assets/glyph-pages/<group>/` (scanned pages, not in git) |
 | `apps/printor/public/textures/` | `scripts/build-texture-library.mjs` | `assets/` (full-resolution scans, not in git) |
 | `apps/site/_site/` | `eleventy` + `scripts/postbuild.mjs` | site sources |
 | `apps/printor/dist/` | `vite build` + `apps/printor/scripts/postbuild.mjs` | printor sources |
@@ -274,22 +273,30 @@ darkest band asks for and `maxSize` is how far a mark may spill past its cell
 darkest band alone leaves a sparse mark mid-ladder clamped, which is the failure
 `fit ramp` exists to prevent.
 
-**Presets are generated.** `generatedPresets.ts` carries four sets of scanned
-period marks — 18th century, 1812 · Patriotic War, 1914 · First World War,
-1941 · Great Patriotic War — compactly: each set's sheets, every mark's box on
-them, and the twelve-level ladder as indices. Three are hand-picked. 1812 is
-its hand-picked scans plus the whole case of type `harvest-glyphs.mjs` cut out
-of four newspaper pages, and it prints **every** mark — 2880, dealt densest to
-darkest, about 260 to a level. The build's measured density and proportion
-live in `generatedPresetMetrics.ts`, which only the tests import; the browser
-measures every mark again on load, off the same shipped pixels, and gets the
-same numbers.
+**Presets are generated, by era.** `scripts/build-glyph-presets.mjs` has three
+levels of structure. A **group** is one directory of marks (hand-picked scans
+plus `harvested/`) packed onto its own sheets. An **era** is a period of
+Russian military history: its Russian groups and, where the war left some, its
+foreign groups. Each era ships a **Russian preset** — every Russian mark dealt
+densest-to-darkest onto exactly one level, hundreds to a level — and, if it has
+foreign groups, a **foreign preset**: the same Russian ramp plus foreign marks,
+at most 30% of every level, chosen to be unlike each other and never a level's
+reference. The one era too small to deal (1941, 17 scans) chooses, with reuse.
+`generatedPresets.ts` is compact because it is in the bundle: a mark is its
+width and height, one character each, and the browser replays the shelf
+packing in `src/sheetPacking.ts` — which must match the build's `packShelves`
+step for step; the tests check they arrive at the same sheets — and a level
+assignment is one character per mark. The build's measured density and
+proportion live in `generatedPresetMetrics.ts`, which only the tests import;
+the browser measures every mark again on load, off the same shipped pixels,
+and gets the same numbers.
 
 `src/presets.ts` is the hand-written part: it unpacks the data into specs and
 ids, and applying a preset changes the marks, the band count, `peak` and
 `maxSize`, and deliberately nothing about the picture. **A band holds a preset
-level by reference**, `level:<set>:<n>`, not as a list of ids — 1812's ids would
-be half a megabyte in every saved project, undo step and share link. Read a
+level by reference**, `level:<preset>:<n>`, not as a list of ids — a level is
+hundreds of marks, and as ids an era would be megabytes in every saved
+project, undo step and share link. Read a
 band's marks through `bandGlyphs(band)`, which expands references, never
 through `band.glyphs` directly; load them through `librarySpecs(settings)`.
 Preset marks are never copied into `settings.glyphs`. `projectState.ts` accepts
@@ -299,14 +306,15 @@ build, never from the file — a project file is untrusted input and that path
 goes straight into an `<img>`. Rebuilding can retire an id; a project that named
 it loses that mark and keeps the rest of its band.
 
-**In a hand-picked set a level's marks are chosen to be unlike each other**,
-not to be the best-scoring ones. Every mark in a pool prints, cycling cell by
+**Where marks are chosen — an era's foreign marks, and the small era — a
+level's marks are chosen to be unlike each other**, not to be the best-scoring
+ones. Every mark in a pool prints, cycling cell by
 cell, so the pool size *is* how varied that level looks; ranked on quality
 alone a level of ten fills with ten impressions of the same letter. The first
 mark of each level is still the best-scoring one, because the ramp measures the
 level's size from it. Pool sizes are per set — a set of fourteen scans cannot
-fill a level of ten. An `every` set (1812) chooses nothing: each mark goes to
-exactly one level, and its reference is again the one that prints it best.
+fill a level of ten. A Russian ramp chooses nothing: each mark goes to exactly
+one level, and its reference is again the one that prints it best.
 
 **Spacing is pitch, not size.** `settings.spacing` (`column gap`, `row gap`)
 adds paper between marks as a share of a mark's cell. `grid` still fixes that

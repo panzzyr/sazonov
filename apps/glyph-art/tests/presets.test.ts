@@ -6,16 +6,19 @@ import {
   activePreset,
   applyPreset,
   bandGlyphs,
+  findPreset,
   levelLabel,
   levelMarks,
   levelToken,
   librarySpecs,
+  presetEraList,
   presetGlyphIds,
   presetLevels,
   presets,
 } from "../src/presets";
-import { presetData } from "../src/generatedPresets";
+import { presetGroups, presetSizeAlphabet } from "../src/generatedPresets";
 import { presetMetrics } from "../src/generatedPresetMetrics";
+import { packShelves } from "../src/sheetPacking";
 import { bandCenter, cellCoverage, coverageFor, poolCorrection, solveRamp } from "../src/engine/ramp";
 import { initialSettings } from "../src/store";
 import { encodeSettings, parseSettings, shareableSettings } from "../src/projectState";
@@ -26,23 +29,34 @@ const publicRoot = path.resolve(fileURLToPath(new URL("../public", import.meta.u
 /** The build measured every mark; this is the lookup the solver wants. */
 const metrics = (id: string) => presetMetrics[id];
 
-/** The set that prints every mark it has, and the three that choose. */
-const everySet = presets.find((preset) => preset.id === "eighteen-twelve")!;
-const chosenSets = presets.filter((preset) => preset !== everySet);
+const russianPresets = presets.filter((preset) => preset.variant === "Russian");
+const foreignPresets = presets.filter((preset) => preset.variant !== "Russian");
+/** The one era too small to deal every mark once; it chooses, with reuse. */
+const smallEra = findPreset("great-patriotic")!;
+const dealtPresets = russianPresets.filter((preset) => preset !== smallEra);
+const crimean = findPreset("crimean")!;
 
-describe("what a preset ships", () => {
-  it("ships the four sets, in ramp order, under names that say which war", () => {
+describe("what the presets ship", () => {
+  it("lists the eras in order, each Russian, and with its foreign print where there is some", () => {
     expect(presets.map((preset) => preset.id)).toEqual([
-      "eighteenth-century",
-      "eighteen-twelve",
-      "great-war",
-      "nineteen-forty-one",
+      "northern-and-patriotic",
+      "northern-and-patriotic-french",
+      "crimean",
+      "crimean-english",
+      "russo-turkish",
+      "russo-turkish-ottoman",
+      "russo-japanese-and-great",
+      "russo-japanese-and-great-foreign",
+      "civil",
+      "great-patriotic",
     ]);
-    expect(presets.map((preset) => preset.label)).toEqual([
-      "18th century",
-      "1812 · Patriotic War",
-      "1914 · First World War",
-      "1941 · Great Patriotic War",
+    expect(presetEraList.map((era) => era.presets.map((preset) => preset.variant))).toEqual([
+      ["Russian", "+ French"],
+      ["Russian", "+ English"],
+      ["Russian", "+ Ottoman"],
+      ["Russian", "+ Japanese & German"],
+      ["Russian"],
+      ["Russian"],
     ]);
   });
 
@@ -51,39 +65,40 @@ describe("what a preset ships", () => {
     expect(presetLevels).toBe(12);
   });
 
-  it.each(chosenSets)("$label puts at least two different marks on every level", (preset) => {
-    for (const level of preset.levels) {
-      expect(new Set(level).size).toBeGreaterThanOrEqual(2);
-    }
-  });
-
-  it.each(chosenSets)("$label puts at least four on each of the darkest three", (preset) => {
-    for (const level of preset.levels.slice(-3)) {
-      expect(new Set(level).size).toBeGreaterThanOrEqual(4);
-    }
-  });
-
-  it.each(chosenSets)("$label reuses marks, because it has fewer than the ramp has places", (preset) => {
-    // A hand-picked set has fewer marks than a twelve-level ramp has places, so
-    // marks serve two or three levels at different sizes — that reuse is where
-    // its variety comes from.
-    const slots = preset.levels.reduce((total, level) => total + level.length, 0);
-    expect(preset.glyphs.length).toBeLessThan(slots);
-    expect(new Set(preset.levels.flat()).size).toBeLessThan(slots);
-  });
-
-  it("prints every mark of 1812, each on exactly one level", () => {
-    const placed = everySet.levels.flat();
+  it.each(dealtPresets)("$label prints every one of its marks, each on exactly one level", (preset) => {
+    const placed = preset.levels.flat();
     expect(new Set(placed).size).toBe(placed.length);
-    expect(placed.length).toBe(everySet.glyphs.length);
-    // The hand-picked scans and the case of type cut from four newspaper pages.
-    expect(everySet.glyphs.length).toBeGreaterThan(2800);
-    expect(everySet.glyphs.some((glyph) => glyph.id === "preset-eighteen-twelve-n01")).toBe(true);
-    expect(everySet.glyphs.some((glyph) => glyph.id.startsWith("preset-eighteen-twelve-europe-"))).toBe(true);
+    expect(placed.length).toBe(preset.glyphs.length);
+    expect(placed.length).toBeGreaterThan(2000);
   });
 
-  it("gives every level of 1812 a deep pool, the dark end included", () => {
-    for (const level of everySet.levels) expect(level.length).toBeGreaterThanOrEqual(50);
+  it.each(dealtPresets)("$label gives every level a deep pool, the dark end included", (preset) => {
+    for (const level of preset.levels) expect(level.length).toBeGreaterThanOrEqual(50);
+  });
+
+  it("carries the small era on chosen marks, reused across levels", () => {
+    for (const level of smallEra.levels) expect(new Set(level).size).toBeGreaterThanOrEqual(2);
+    for (const level of smallEra.levels.slice(-3)) expect(new Set(level).size).toBeGreaterThanOrEqual(4);
+    const slots = smallEra.levels.reduce((total, level) => total + level.length, 0);
+    expect(new Set(smallEra.levels.flat()).size).toBeLessThan(slots);
+  });
+
+  it.each(foreignPresets)("$label is its era's Russian ramp with foreign marks added", (preset) => {
+    const russian = presets.find((entry) => entry.era === preset.era && entry.variant === "Russian")!;
+    preset.levels.forEach((level, index) => {
+      expect(level.slice(0, russian.levels[index].length)).toEqual(russian.levels[index]);
+    });
+    expect(preset.peak).toBe(russian.peak);
+    expect(preset.foreign.length).toBeGreaterThan(100);
+  });
+
+  it.each(foreignPresets)("$label keeps foreign marks under 30% of every level, never its reference", (preset) => {
+    const foreign = new Set(preset.foreign);
+    for (const level of preset.levels) {
+      const count = level.filter((id) => foreign.has(id)).length;
+      expect(count / level.length).toBeLessThanOrEqual(0.3 + 1e-9);
+      expect(foreign.has(level[0])).toBe(false);
+    }
   });
 
   it.each(presets)("$label only names marks it carries", (preset) => {
@@ -92,28 +107,31 @@ describe("what a preset ships", () => {
     for (const glyph of preset.glyphs) expect(presetMetrics[glyph.id]).toBeDefined();
   });
 
-  it.each(presets)("$label packs its marks onto sheets that exist, by relative path", (preset) => {
-    const { sheets } = presetData.find((data) => data.id === preset.id)!;
-    for (const sheet of sheets) {
+  it.each(presetGroups)("puts $id on sheets that exist, where the browser will find its marks", (group) => {
+    for (const [sheet] of group.sheets) {
       // Relative, so the sub-path deployment works; and nothing that could
       // send the browser off this origin.
-      expect(sheet.startsWith(`presets/${preset.id}/`)).toBe(true);
+      expect(sheet.startsWith(`presets/${group.id}/`)).toBe(true);
       expect(sheet).not.toMatch(/^[a-z]+:|^\/\/|\.\./);
       expect(existsSync(path.join(publicRoot, sheet))).toBe(true);
     }
-    for (const glyph of preset.glyphs) {
-      expect(glyph.kind).toBe("preset");
-      expect(sheets).toContain(glyph.source);
-      const [x, y, width, height] = glyph.rect!;
-      expect(Math.min(x, y)).toBeGreaterThanOrEqual(0);
-      expect(Math.min(width, height)).toBeGreaterThan(0);
+    // The browser replays the build's packing from the sizes alone. If the two
+    // loops ever drift apart, every mark is cut from the wrong place on its
+    // sheet — and the first sign is that the sheets come out a different size.
+    const sizes: [number, number][] = [];
+    for (let index = 0; index < group.sizes.length; index += 2) {
+      sizes.push([
+        presetSizeAlphabet.indexOf(group.sizes[index]) + 1,
+        presetSizeAlphabet.indexOf(group.sizes[index + 1]) + 1,
+      ]);
     }
+    expect(packShelves(sizes).sheets.map((sheet) => [sheet.width, sheet.height]))
+      .toEqual(group.sheets.map(([, width, height]) => [width, height]));
   });
 
-  it("has no id in two sets", () => {
-    const ids = presets.flatMap((preset) => preset.glyphs.map((glyph) => glyph.id));
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(presetGlyphIds.size).toBe(ids.length);
+  it("has no id in two groups", () => {
+    const marks = presetGroups.reduce((total, group) => total + group.sizes.length / 2, 0);
+    expect(presetGlyphIds.size).toBe(marks);
   });
 });
 
@@ -165,20 +183,13 @@ describe("the ramp a preset solves to", () => {
     }
   });
 
-  it("gives an airier set a lower peak than a solid one", () => {
-    const light = presets.find((preset) => preset.id === "eighteenth-century")!;
-    expect(light.peak).toBeLessThan(everySet.peak);
-  });
-
-  it("sorts wide marks onto the light end of 1812", () => {
+  it("sorts wide marks onto the light end of a dealt era", () => {
     // A mark is fitted into its square cell by its long side, so a wide one
     // reaches only part of the cell the other way and inks proportionally less.
     // Nothing sorts for this — it falls out of dealing the densest marks to the
-    // darkest levels — and on a set of nearly three thousand marks, whose
-    // proportions run from square to two-and-a-half to one, it is plain in the
-    // data. The hand-picked sets are too small a sample to show it; the
-    // mechanism itself is asserted in `ramp.test.ts`.
-    const elongation = everySet.levels.map((level) => {
+    // darkest levels — and on an era of thousands of marks it is plain in the
+    // data. The mechanism itself is asserted in `ramp.test.ts`.
+    const elongation = crimean.levels.map((level) => {
       const ratios = level.map((id) => {
         const { aspect } = presetMetrics[id];
         return Math.max(aspect, 1 / aspect);
@@ -217,23 +228,25 @@ describe("applying a preset", () => {
   it("puts one level reference on each band, and copies no marks into the project", () => {
     const settings = initialSettings();
     const before = settings.glyphs.length;
-    applyPreset(settings, everySet);
+    applyPreset(settings, crimean);
 
     expect(settings.glyphs).toHaveLength(before);
     settings.bands.forEach((band, index) => {
-      expect(band.glyphs).toEqual([levelToken(everySet.id, index)]);
-      expect(bandGlyphs(band)).toEqual(everySet.levels[index]);
+      expect(band.glyphs).toEqual([levelToken(crimean.id, index)]);
+      expect(bandGlyphs(band)).toEqual(crimean.levels[index]);
     });
   });
 
   it("loads every mark the references stand for, from the build", () => {
     const settings = initialSettings();
-    applyPreset(settings, everySet);
+    const preset = findPreset("crimean-english")!;
+    applyPreset(settings, preset);
     const specs = librarySpecs(settings);
     const loaded = new Set(specs.map((spec) => spec.id));
-    for (const glyph of everySet.glyphs) expect(loaded.has(glyph.id)).toBe(true);
+    const placed = new Set(preset.levels.flat());
+    for (const id of placed) expect(loaded.has(id)).toBe(true);
     // Once each, and the project's own marks as well.
-    expect(specs).toHaveLength(settings.glyphs.length + everySet.glyphs.length);
+    expect(specs).toHaveLength(settings.glyphs.length + placed.size);
   });
 
   it("clears sizes dragged for the marks that were there before", () => {
@@ -247,8 +260,8 @@ describe("applying a preset", () => {
     const settings = initialSettings();
     expect(activePreset(settings)).toBeUndefined();
 
-    applyPreset(settings, presets[2]);
-    expect(activePreset(settings)?.id).toBe("great-war");
+    applyPreset(settings, findPreset("russo-turkish-ottoman")!);
+    expect(activePreset(settings)?.id).toBe("russo-turkish-ottoman");
 
     settings.bands[5].glyphs = [...settings.bands[5].glyphs, "mark-blot"];
     expect(activePreset(settings)).toBeUndefined();
@@ -256,49 +269,49 @@ describe("applying a preset", () => {
 });
 
 describe("level references", () => {
-  it("stand for a level of a set this build ships, and nothing else", () => {
-    expect(levelMarks(levelToken("great-war", 11))).toEqual(presets[2].levels[11]);
+  it("stand for a level of a preset this build ships, and nothing else", () => {
+    expect(levelMarks(levelToken("civil", 11))).toEqual(findPreset("civil")!.levels[11]);
     for (const id of [
       "level:forgery:3",
-      "level:great-war:12",
-      "level:great-war:-1",
-      "level:great-war:1x",
-      "level:great-war",
-      "preset-great-war-01",
+      "level:civil:12",
+      "level:civil:-1",
+      "level:civil:1x",
+      "level:civil",
+      "preset-civil-war-0",
       "mark-blot",
     ]) {
       expect(levelMarks(id)).toBeUndefined();
     }
   });
 
-  it("are named for the interface by set and level", () => {
-    expect(levelLabel(levelToken("eighteen-twelve", 4))).toBe("1812 · Patriotic War · level 4");
+  it("are named for the interface by preset and level", () => {
+    expect(levelLabel(levelToken("crimean", 4))).toBe("1853–1856 · Crimean War · level 4");
     expect(levelLabel("mark-blot")).toBeUndefined();
   });
 
   it("leave a band's own marks alone when mixed with them", () => {
-    const band = { glyphs: [levelToken("great-war", 2), "mark-blot"], size: null };
-    expect(bandGlyphs(band)).toEqual([...presets[2].levels[2], "mark-blot"]);
+    const civil = findPreset("civil")!;
+    const band = { glyphs: [levelToken("civil", 2), "mark-blot"], size: null };
+    expect(bandGlyphs(band)).toEqual([...civil.levels[2], "mark-blot"]);
   });
 });
 
 describe("presets through a saved project", () => {
   it("survives a round trip, and stays small doing it", () => {
-    // Before level references, 1812's marks were written into every saved
-    // project as ids — and cut at 64 marks when the project was read back.
     const settings = initialSettings();
-    applyPreset(settings, everySet);
+    const preset = findPreset("russo-japanese-and-great-foreign")!;
+    applyPreset(settings, preset);
     const saved = JSON.stringify({ version: 1, settings });
     const parsed = parseSettings(JSON.parse(saved));
-    expect(activePreset(parsed)?.id).toBe("eighteen-twelve");
-    expect(parsed.peak).toBeCloseTo(everySet.peak);
+    expect(activePreset(parsed)?.id).toBe(preset.id);
+    expect(parsed.peak).toBeCloseTo(preset.peak);
     expect(saved.length).toBeLessThan(20_000);
   });
 
   it("survives a share link, which stays a link", () => {
     const settings = initialSettings();
-    applyPreset(settings, everySet);
-    expect(activePreset(shareableSettings(settings))?.id).toBe("eighteen-twelve");
+    applyPreset(settings, crimean);
+    expect(activePreset(shareableSettings(settings))?.id).toBe("crimean");
     expect(encodeSettings(settings).length).toBeLessThan(8_000);
   });
 
@@ -327,13 +340,13 @@ describe("presets through a saved project", () => {
       settings: {
         bands: [
           { glyphs: ["level:forgery:3"] },
-          { glyphs: ["level:great-war:99", levelToken("great-war", 1)] },
+          { glyphs: ["level:civil:99", levelToken("civil", 1)] },
         ],
       },
     });
     const kept = parsed.bands.flatMap((band) => band.glyphs);
     expect(kept).not.toContain("level:forgery:3");
-    expect(kept).not.toContain("level:great-war:99");
-    expect(kept).toContain(levelToken("great-war", 1));
+    expect(kept).not.toContain("level:civil:99");
+    expect(kept).toContain(levelToken("civil", 1));
   });
 });

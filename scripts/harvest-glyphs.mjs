@@ -71,6 +71,24 @@ const MAX_ASPECT = 2.5;
 const MIN_FILL = 0.12;
 
 /**
+ * An island inking more of its box than this is a blob, not a mark: a bullet, a
+ * full stop from a line of leader dots, a rule, an ink spot. Past the first,
+ * any roundish island past the second. Letters never get there — even a heavy
+ * poster Ж leaves air between its strokes — but a page of contents is hundreds
+ * of leader dots, and they would fill a level with identical black discs.
+ */
+const MAX_FILL = 0.85;
+const MAX_ROUND_FILL = 0.72;
+
+/**
+ * Ink allowed in the middle of an island — an ellipse spanning the central 60%
+ * of its box. A blurred dot has a soft rim that pulls its overall fill under
+ * the limits above, but its middle is solid; a letter's middle always has a
+ * counter or the paper between two strokes in it.
+ */
+const MAX_CORE_FILL = 0.9;
+
+/**
  * Fraction of an island's inked pixels that must be *solidly* inked.
  *
  * The one filter the geometry cannot supply. A page carries, alongside its
@@ -176,15 +194,54 @@ function label(alpha, width, height) {
   return { labels, find };
 }
 
-/** Bounding box and ink of every island, keyed by its resolved label. */
-function islands(alpha, width, height) {
-  const { labels, find } = label(alpha, width, height);
+/**
+ * Ink grown by `radius` pixels in every direction, as 255 or 0.
+ *
+ * A square max filter, run as a horizontal then a vertical window over prefix
+ * sums, so its cost does not depend on the radius.
+ */
+function grow(alpha, width, height, radius) {
+  const across = new Uint8Array(width * height);
+  const row = new Int32Array(width + 1);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) row[x + 1] = row[x] + (alpha[y * width + x] > INK ? 1 : 0);
+    for (let x = 0; x < width; x += 1) {
+      const left = Math.max(0, x - radius);
+      const right = Math.min(width, x + radius + 1);
+      across[y * width + x] = row[right] - row[left] > 0 ? 1 : 0;
+    }
+  }
+
+  const grown = new Uint8Array(width * height);
+  const column = new Int32Array(height + 1);
+  for (let x = 0; x < width; x += 1) {
+    for (let y = 0; y < height; y += 1) column[y + 1] = column[y] + across[y * width + x];
+    for (let y = 0; y < height; y += 1) {
+      const top = Math.max(0, y - radius);
+      const bottom = Math.min(height, y + radius + 1);
+      grown[y * width + x] = column[bottom] - column[top] > 0 ? 255 : 0;
+    }
+  }
+  return grown;
+}
+
+/**
+ * Bounding box and ink of every island, keyed by its resolved label.
+ *
+ * With `join`, islands are found on the ink grown by that many pixels, so
+ * pieces closer together than twice that become one mark. A kanji is several
+ * islands of ink, and an Ottoman word is letters and the dots above and below
+ * them; cut apart, they are strokes and specks. The box and the ink are still
+ * measured off the page as it is, never off the grown copy.
+ */
+function islands(alpha, width, height, join = 0) {
+  const { labels, find } = label(join > 0 ? grow(alpha, width, height, join) : alpha, width, height);
   const boxes = new Map();
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const value = labels[y * width + x];
-      if (!value) continue;
+      if (!value || alpha[y * width + x] <= INK) continue;
       const key = find(value);
       let box = boxes.get(key);
       if (!box) {
@@ -254,6 +311,26 @@ function crispness(alpha, width, box) {
   return inked ? solid / inked : 0;
 }
 
+/** Mean ink inside the ellipse spanning the central 60% of an island's box. */
+function coreFill(alpha, width, box) {
+  const centreX = (box.left + box.right) / 2;
+  const centreY = (box.top + box.bottom) / 2;
+  const radiusX = Math.max(0.5, (box.right - box.left + 1) * 0.3);
+  const radiusY = Math.max(0.5, (box.bottom - box.top + 1) * 0.3);
+  let sum = 0;
+  let samples = 0;
+  for (let y = Math.ceil(centreY - radiusY); y <= centreY + radiusY; y += 1) {
+    for (let x = Math.ceil(centreX - radiusX); x <= centreX + radiusX; x += 1) {
+      const dx = (x - centreX) / radiusX;
+      const dy = (y - centreY) / radiusY;
+      if (dx * dx + dy * dy > 1) continue;
+      sum += alpha[y * width + x] / 255;
+      samples += 1;
+    }
+  }
+  return samples ? sum / samples : 0;
+}
+
 export function signatureDistance(a, b) {
   let total = 0;
   for (let index = 0; index < a.length; index += 1) {
@@ -311,16 +388,52 @@ function countRecurrence(candidates) {
 
 /* ------------------------------------------------------------------ pages */
 
-async function harvest(file) {
+/**
+ * Stretches a faint page's ink so its strongest ink reaches full strength.
+ *
+ * Crispness counts pixels at full strength, which assumes the ink gets there.
+ * A pale print, or a scan whose background was removed at a soft threshold,
+ * never does — one of the Civil War posters tops out at alpha 235 with most of
+ * its ink between 128 and 191 — and every letter on it fails as a stain. The
+ * 99th percentile of the ink is taken as full strength, so a page that already
+ * reaches it is left exactly as it is. Stretches in place; returns the gain.
+ */
+function stretchInk(alpha) {
+  const counts = new Uint32Array(256);
+  let inked = 0;
+  for (const value of alpha) {
+    if (value <= INK) continue;
+    counts[value] += 1;
+    inked += 1;
+  }
+  let seen = 0;
+  let strong = 255;
+  for (let value = 255; value > INK; value -= 1) {
+    seen += counts[value];
+    if (seen >= inked * 0.01) {
+      strong = value;
+      break;
+    }
+  }
+  if (strong >= 250) return 1;
+  const gain = 255 / strong;
+  for (let index = 0; index < alpha.length; index += 1) {
+    alpha[index] = Math.min(255, Math.round(alpha[index] * gain));
+  }
+  return gain;
+}
+
+async function harvest(file, options) {
   const { data, info } = await sharp(file)
     .ensureAlpha()
     .extractChannel("alpha")
     .raw()
     .toBuffer({ resolveWithObject: true });
   const { width, height } = info;
+  const gain = stretchInk(data);
 
   const candidates = [];
-  for (const box of islands(data, width, height).values()) {
+  for (const box of islands(data, width, height, options.join).values()) {
     const boxWidth = box.right - box.left + 1;
     const boxHeight = box.bottom - box.top + 1;
     const longest = Math.max(boxWidth, boxHeight);
@@ -332,6 +445,8 @@ async function harvest(file) {
 
     const density = box.ink / (boxWidth * boxHeight);
     if (density < MIN_FILL) continue;
+    if (density > MAX_FILL || (density > MAX_ROUND_FILL && aspect > 0.6 && aspect < 1.7)) continue;
+    if (coreFill(data, width, box) > MAX_CORE_FILL) continue;
 
     const crisp = crispness(data, width, box);
     if (crisp < MIN_CRISP) continue;
@@ -347,12 +462,16 @@ async function harvest(file) {
     });
   }
 
+  // Recurrence is proof for type set in an alphabet, where every letter comes
+  // back. A page of kanji or of Ottoman words rarely repeats a mark exactly,
+  // so `--singles` keeps what the other filters passed without that proof.
   countRecurrence(candidates);
   const kept = candidates.filter(
-    (candidate) => candidate.recurrence >= MIN_RECURRENCE
+    (candidate) => options.singles
+      || candidate.recurrence >= MIN_RECURRENCE
       || Math.min(candidate.width, candidate.height) >= LARGE_EDGE,
   );
-  return { width, height, data, pageWidth: width, candidates, kept };
+  return { width, height, data, pageWidth: width, candidates, kept, gain };
 }
 
 /** Writes one island out as a mark: black ink, alpha carrying the impression. */
@@ -383,9 +502,19 @@ async function write(page, candidate, file) {
 }
 
 async function main() {
-  const [set, ...pages] = process.argv.slice(2);
+  const options = { join: 0, singles: false };
+  const positional = [];
+  const args = process.argv.slice(2);
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === "--join") options.join = Math.max(0, Number(args[++index]) || 0);
+    else if (args[index] === "--singles") options.singles = true;
+    else positional.push(args[index]);
+  }
+  const [set, ...pages] = positional;
   if (!set || pages.length === 0) {
-    throw new Error("usage: node scripts/harvest-glyphs.mjs <set-id> <page.png> [pages...]");
+    throw new Error(
+      "usage: node scripts/harvest-glyphs.mjs <set-id> [--join <px>] [--singles] <page.png> [pages...]",
+    );
   }
 
   const directory = path.join(outputRoot, set, "harvested");
@@ -400,7 +529,7 @@ async function main() {
 
   for (const page of pages) {
     const started = Date.now();
-    const result = await harvest(page);
+    const result = await harvest(page, options);
     const stem = path.basename(page, path.extname(page)).replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
     let index = 0;
@@ -424,13 +553,14 @@ async function main() {
       `${path.basename(page).padEnd(24)} ${result.width}x${result.height}`
       + `  islands ${String(result.candidates.length).padStart(5)}`
       + `  kept ${String(result.kept.length).padStart(5)}`
+      + `${result.gain > 1 ? `  ink ×${result.gain.toFixed(2)}` : ""}`
       + `  ${Date.now() - started}ms`,
     );
   }
 
   await writeFile(
     path.join(directory, "harvest.json"),
-    `${JSON.stringify({ set, pages, written, marks: manifest }, null, 1)}\n`,
+    `${JSON.stringify({ set, pages, options, written, marks: manifest }, null, 1)}\n`,
     "utf8",
   );
 

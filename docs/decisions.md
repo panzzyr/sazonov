@@ -1,5 +1,33 @@
 # Architecture decisions
 
+## 2026-09-13 — glyph art presets are eras, Russian and with their foreign print
+
+- **Decision:** Replace the per-set presets with six eras — 1700–1812,
+  Crimean, Russo-Turkish, Russo-Japanese & First World, Civil, Great
+  Patriotic. An era's Russian groups deal every mark they have onto exactly one
+  level. Four eras ship a second preset with the foreign print of the same war —
+  French, English, Ottoman, Japanese and German — mixed into every level at no
+  more than 30% of it, the foreign marks chosen to be unlike each other and
+  never a level's reference. The old hand-picked sets fold into their eras.
+  Marks ship by group on sheets both presets of an era share; the bundle holds
+  each mark's width and height and its level, one character each, and the
+  browser replays the build's shelf packing (`src/sheetPacking.ts`) to place it.
+- **Alternatives:** A preset per language. Fixed pool sizes. Positions in the
+  bundle — three more numbers for each of nearly forty thousand marks.
+- **Reason:** The pool of a level is how varied it looks, so every Russian mark
+  of an era is the richest ramp the material allows; the foreign print is the
+  same war seen from the other side, and belongs in it as an accent rather than
+  as a set of its own.
+- **Consequences:** A preset downloads up to about 4.5 MB of sheets when it is
+  picked; the library is about 12 MB. The per-preset budget is 6 MB and the
+  total 16 MB, counted by the groups each preset draws on. Harvesting gained
+  `--join` (a kanji or an Ottoman word is several islands of ink), `--singles`
+  (such scripts rarely repeat a mark exactly), a stretch for pages whose ink
+  never reaches full strength, and a filter for blobs — leader dots, bullets,
+  ink spots. The one era of a couple of dozen scans (1941) still chooses, with
+  reuse. Projects saved against the previous presets fall back to the default
+  ramp; their level references name presets that no longer exist.
+
 ## 2026-09-11 — glyph art spaces marks by pitch, not by shrinking them
 
 - **Decision:** `column gap` and `row gap` add paper between marks as a share of

@@ -66,7 +66,7 @@ it is, so recognition would be an expensive way to produce a label nothing reads
 diagonally as often as squarely, and 4-connectivity shears the serifs off into
 separate islands.
 
-### Four filters
+### Five filters
 
 Six thousand islands come off a broadsheet. Most are not marks.
 
@@ -75,6 +75,7 @@ Six thousand islands come off a broadsheet. Most are not marks.
 | **size** | under 14 px on the short side; over 420 px on the long | scanner grit and full stops at one end; rules, borders and the masthead at the other |
 | **proportion** | over 2.5 : 1 | past that a mark printed in a square cell is a dash, not a mark |
 | **fill** | under 12% of its own bounding box | a frame or a stray hairline |
+| **blob** | over 85% of its box; over 72% if roundish; over 90% in the middle of its box | a bullet, a leader dot, an ink spot — see below |
 | **crispness** | under 33% of its ink at full strength | the filter nothing else can do — see below |
 
 **Crispness is the one that earns its place.** A page carries, alongside its
@@ -97,6 +98,21 @@ crispness  0.00 – 0.20   uniformly rubbish
 
 On the four 1812 pages this filter alone took `north.png` from 2431 islands to
 626 — that page had been cleaned in a way that left a great deal of ghosting.
+
+**A faint page is stretched first.** Crispness counts pixels at full strength,
+which assumes the ink gets there. A pale print, or a scan whose background was
+removed at a soft threshold, never does — one of the Civil War posters tops out
+at alpha 235 with most of its ink between 128 and 191 — and every letter on it
+fails as a stain. So the page's ink is stretched until its 99th percentile is
+full strength. A page that already gets there is left exactly as it is; the
+script prints the gain when it applies one.
+
+**Blobs are not marks.** A page of contents is hundreds of leader dots, and a
+page of notices is bullets and rules. They pass every other test and would
+fill the darkest levels with identical black discs. An island that inks nearly
+all of its box is rejected, and so is one whose middle is solid: a blurred dot
+has a soft rim that pulls its overall fill down, but a letter's middle always
+holds a counter or the paper between two strokes.
 
 ### And one that is not a filter but a proof
 
@@ -122,6 +138,19 @@ being type.
 > The bug is silent: the script runs, reports a number, and the number is wrong.
 > `countRecurrence` searches the surrounding 3×3 of buckets for this reason.
 
+### Scripts that are not an alphabet
+
+Two options, for print where a mark is not one island.
+
+- **`--join <px>`** finds islands on the ink grown by that many pixels, so
+  pieces closer than twice that become one mark. A kanji is several islands; an
+  Ottoman word is its letters and the dots above and below them. Cut apart,
+  they are strokes and specks. The box and the ink are still taken off the page
+  as it is. The shipped Japanese page is cut at `--join 4`, the Ottoman at 3.
+- **`--singles`** drops the recurrence proof. Kanji and words rarely repeat
+  exactly, so without it almost nothing on those pages survives. The other
+  filters still apply. The small Petrine *Ведомости* page needs it too.
+
 ### What comes out
 
 One PNG per surviving island, black ink with the impression in the alpha —
@@ -134,8 +163,8 @@ All of it goes into `assets/glyph-presets/<set-id>/harvested/`. That
 subdirectory is the only thing the script wipes, so hand-picked scans can sit
 beside it in the set's own directory and survive every re-harvest.
 
-The four shipped pages yield **2839 candidates** — the case of type the 1812
-set is composed from. That set prints all of them.
+The four 1812 pages yield **2839 candidates** — the case of type the 1812 group
+of the 1700–1812 era is composed from. The era prints all of them.
 
 ---
 
@@ -182,14 +211,22 @@ its density suggests. It hits the ceiling at a far lighter tone. On 1812 this
 is plain in the data: the lightest levels carry markedly longer marks than the
 darkest, and `tests/presets.test.ts` asserts it.
 
-### A set with more material than places prints all of it
+### Groups, eras and presets
 
-A set marked `every: true` in the `sets` array — 1812 is the one — chooses
-nothing. Every mark that can print anywhere is dealt onto exactly one level:
+A **group** is one directory of marks — hand-picked scans in
+`assets/glyph-presets/<group>/`, harvested ones in its `harvested/` — packed
+onto its own sheets. An **era**, in the `eras` array of the builder, is a war:
+its Russian groups and, if the war left some, its foreign groups. Each era
+ships a Russian preset and, with foreign groups, a second preset over the same
+Russian sheets.
+
+### An era's Russian marks all print
+
+An era's Russian marks are not chosen among. Every mark that can print anywhere is dealt onto exactly one level:
 darkest level first, densest marks first, each level taking an even share of
 what is left. A dark level that fewer marks can reach takes all of them and
-leaves a bigger share to the rest. On 1812 that is 2880 marks, about 260 to a
-level and 88 on the darkest.
+leaves a bigger share to the rest. On the Crimean era that is 7397 marks, about
+690 to a level and 101 on the darkest.
 
 Densest-first is also what keeps a level's marks near one size. Every mark on
 a level prints the same ink, so a sparse mark prints large and a solid one
@@ -198,11 +235,27 @@ level is the one that prints it best, as below; the order of the rest does not
 matter, because each cell picks its own from the whole pool.
 
 The only marks left out are the ones that print nowhere — too sparse to reach
-even the lightest level inside the ceiling. On 1812 that is none.
+even the lightest level inside the ceiling. On the shipped eras that is none.
+
+An era of fewer than 96 marks cannot give every level a pool of its own; it
+chooses, as below, and reuses a mark on up to three levels. That is 1941, for
+now.
+
+### Foreign marks: at most 30% of a level
+
+The second preset of an era keeps the Russian ramp exactly — the same levels,
+the same peak, the same reference first on every level — and adds foreign marks
+to each level up to `FOREIGN_SHARE` of it: 3 for every 7 Russian marks. Where
+there are more foreign marks than that, the ones taken are the most unlike
+each other, which is also what mixes Japanese and German evenly into the one
+era that has both. They are chosen once on the measurements before compression,
+so only the marks that print are written, and dealt again on the sheets as
+written.
 
 ### Within a level, marks are chosen to be unlike each other
 
-This is how the hand-picked sets fill their levels.
+This is how an era's foreign marks are chosen, and how the small era fills its
+levels.
 
 A pool is not a fallback list. Every mark in it prints, cycling from cell to
 cell, so **the pool size is how varied that level looks**. Filling a level from
@@ -226,16 +279,16 @@ close together.
 A mark serves at most three levels at different sizes, which is where a *small*
 set's variety comes from.
 
-### Pool sizes are per set
+### What the eras hold
 
-| set | marks used | per level | darkest three | peak ink |
-| --- | --- | --- | --- | --- |
-| 18th century | 21 of 24 | 2 | 4 | 44% |
-| **1812 · Patriotic War** | **2880 of 2881** | **~260** | **262 / 174 / 88** | **68%** |
-| 1914 · First World War | 14 of 14 | 2 | 4 | 54% |
-| 1941 · Great Patriotic War | 17 of 17 | 2 | 4 | 63% |
-
-1812's one missing mark is a blank scan, skipped before solving.
+| era | Russian marks | per level, darkest three | foreign added | peak ink | download |
+| --- | --- | --- | --- | --- | --- |
+| 1700–1812 | 5191 | ~480; 481 / 299 / 85 | 733 French | 75% | 2.8 MB; 2.9 with French |
+| Crimean | 7397 | ~690; 693 / 370 / 101 | 876 English | 81% | 1.9 MB; 2.2 with English |
+| Russo-Turkish | 2763 | ~245; 245 / 229 / 90 | 791 of 1813 Ottoman | 69% | 0.4 MB; 0.6 with Ottoman |
+| Russo-Japanese & First World | 2415 | ~219; 219 / 162 / 66 | 1001 of 4463 (526 Japanese, 475 German) | 74% | 1.2 MB; 1.7 with foreign |
+| Civil | 6656 | ~673; 340 / 158 / 103 | — | 80% | 4.4 MB |
+| Great Patriotic | 17, chosen | 2; 4 / 4 / 4 | — | 63% | 0.01 MB |
 
 A set not using every one of its scans is the diversity rule working, not
 material being ignored. The three that 18th century leaves out sit 0.27–0.31
@@ -250,7 +303,7 @@ because all *n* of them have to fit inside the cell. Taking 18th century from
 2/4 to 3/5 does use all 24 of its scans — and drops its peak ink from 44% to
 38%, because the fifth-densest mark cannot cover as much as the fourth.
 
-For an `every` set the anchor is `EVERY_ANCHOR` — the darkest level is solved
+For a dealt era the anchor is `EVERY_ANCHOR` — the darkest level is solved
 so that its 24 densest marks still fit the cell.
 
 There is no ceiling on a pool from the project format. A preset puts one
@@ -260,8 +313,9 @@ pools are.
 
 `peak` — the ink the darkest level asks for — is a property of the set, not a
 setting. Airy letterpress cannot cover as much of a cell as a solid woodblock
-without spilling out of it. 1812 reaches the highest peak of the four because a
-case of newspaper type contains genuinely solid sorts.
+without spilling out of it. The eras cut from whole pages reach far higher
+peaks than 1941's few scans, because a case of newspaper type contains
+genuinely solid sorts.
 
 ### Only what prints is written, onto sheets
 
@@ -269,10 +323,12 @@ The builder wipes each set's output directory and writes only the marks that a
 level actually names, packed onto sprite sheets — `sheet-0.webp`, `sheet-1.webp`
 — at most 2048 px on a side, with two pixels of paper between marks so a scaled
 draw never samples a neighbour. A sheet is one request and one decode; a file
-per mark would be nearly three thousand of each for 1812.
+per mark would be tens of thousands of each. Only each mark's width and height
+go into the bundle, one character each; the browser replays the packing
+(`src/sheetPacking.ts`) to find it.
 
-The hand-picked sets are lossless. 1812 is lossy WebP at quality 80 and a
-96 px long edge, because lossless it is five and a half megabytes. Lossy
+Hand-picked groups are lossless. Harvested ones are lossy WebP at quality 75
+and an 80 px long edge; lossless, the library would be several times larger. Lossy
 compression lifts the faint fringe of a soft scan past the ink floor, which
 would give the browser a different box than the build measured — so after
 writing the sheets the builder measures every mark again off them, by the
@@ -309,25 +365,27 @@ What you are checking:
 
 Two ceilings, because they answer different questions.
 
-- **2.75 MB per set** — a set is fetched only when it is picked, so this is what
-  a visitor actually downloads. Watch it when a set gains marks.
-- **3 MB total** — what the repository and the deployment carry. Watch it when
-  a set is added.
+- **6 MB per preset** — the sheets of every group a preset draws on, fetched
+  only when it is picked, so this is what a visitor actually downloads. Watch it
+  when an era gains pages.
+- **16 MB total** — what the repository and the deployment carry. Watch it when
+  an era is added.
 
-Current: 2.6 MB across four sets — 1812 at about 2.5 MB for 2880 marks, the
-hand-picked sets at 23–56 KB each. `apps/glyph-art/scripts/budget.mjs` fails
-the build on either.
+Current: 11.9 MB across fourteen groups; the heaviest preset is the Civil War
+at 4.4 MB. `apps/glyph-art/scripts/budget.mjs` fails the build on either.
 
 ---
 
 ## Adding your own pages
 
 1. Clean the background off the scans. This is the step that decides everything.
-2. Put them in `assets/glyph-pages/<set-id>/`.
-3. Add the set to the `sets` array in `scripts/build-glyph-presets.mjs`, with a
-   label and either a pool size or `every: true`. A set of thousands of marks
-   also wants `maxEdge` and `quality`, or it will not fit the budget.
-4. `node scripts/harvest-glyphs.mjs <set-id> assets/glyph-pages/<set-id>/*.png`
+2. Put them in `assets/glyph-pages/<group-id>/`.
+3. Add the group to the `groups` array in `scripts/build-glyph-presets.mjs`, and
+   to an era in `eras` — as a Russian group, or as a foreign one. A new era needs
+   an id, a label, and a foreign id and label if it has foreign groups.
+4. `node scripts/harvest-glyphs.mjs <group-id> assets/glyph-pages/<group-id>/*.png`,
+   with `--join` and `--singles` for kanji, Arabic script or anything else that
+   is not one island to a letter
 5. `node scripts/build-glyph-presets.mjs --sheet proof`
 6. Look at the sheet. If a level is muddy, the usual cause is a page that needed
    more cleaning, not a threshold that needs moving.

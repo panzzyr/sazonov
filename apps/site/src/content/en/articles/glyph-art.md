@@ -140,22 +140,27 @@ square sit on one ramp without any of them reading two bands off.
 
 ## Presets
 
-Four sets ship with the tool: **18th century**, **1812 · Patriotic War**,
-**1914 · First World War** and **1941 · Great Patriotic War**. Each is scanned
-type and marks of its period — letters, numerals, seals, ornaments — sorted
-onto twelve levels.
+The presets are eras of Russian military history: **1700–1812** (the Northern
+and the Patriotic wars), the **Crimean War**, the **Russo-Turkish War**, the
+**Russo-Japanese and First World wars**, the **Civil War** and the **Great
+Patriotic War**. Each is the type of its war — letters, numerals, seals and
+ornaments cut out of newspapers, decrees and posters of the time — sorted onto
+twelve levels. Four eras come twice: once in Russian print alone, and once with
+the foreign print of the same war mixed in.
 
 Picking one changes the marks and the shape of their ramp, and nothing about the
 picture. The grid, the levels, the inversions and your source all stay where you
 put them, so you can flip between the sets to compare them.
 
-In the three hand-picked sets every level prints at least two different marks,
-and the darkest three print at least four. A mark serves two or three levels at
-different sizes, which is where the variety comes from without a larger set of
-scans — so a level is a texture rather than one stamp repeated. **1812** works
-differently, and has its own section below.
+Every Russian mark of an era prints. Nothing is chosen and nothing is left
+out: each mark is dealt onto the one level where it prints, the densest to the
+darkest, so a level holds hundreds of different impressions and no two
+neighbouring cells at the same tone are likely to share one. The one exception
+is **1941**, which is still a couple of dozen scans; there a mark serves two or
+three levels at different sizes.
 
-In a hand-picked set, the marks on a level are chosen to be **as unlike each other as possible**, not
+Where marks do have to be chosen — the foreign ones, and 1941's — the marks on
+a level are chosen to be **as unlike each other as possible**, not
 simply the ones that print it best. That matters more than it sounds: every mark
 in a level prints, cycling from cell to cell, so a level filled from the top of
 a ranked list ends up as ten impressions of the same letter — ten marks by the
@@ -175,22 +180,23 @@ cell the other way and inks two fifths of what its density suggests.
 
 Each set carries its own `max ink`, because that is a fact about the material:
 airy letterpress cannot cover as much of a cell as a solid woodblock without
-spilling out of it. **18th century** is the lightest set for exactly that reason
-and will not print a true black; **1812** is the heaviest, because a case of
-newspaper type contains genuinely solid sorts. That is the type, not the tool.
+spilling out of it. **1941**, a handful of airy scans, is the lightest for exactly
+that reason and will not print a true black; the eras cut from whole pages are
+heavier, because a case of newspaper type contains genuinely solid sorts. That is the type, not the tool.
 
-### 1812
+### Foreign print
 
-The other three sets were picked mark by mark. This one is forty-odd scans
-picked by hand plus everything cut automatically out of four whole newspaper
-pages of 1812 and 1813 — *Вѣстникъ Европы*, *Северная почта*, *Рускiй Инвалидъ*,
-*Сынъ Отечества* — and it prints all of it: nearly three thousand marks, dealt
-a couple of hundred to each level, the densest to the darkest. Nothing is
-chosen and nothing is left out, so no two neighbouring cells at the same tone
-are likely to share a mark.
+A war is printed on both sides of it. The second preset of an era keeps its
+Russian ramp exactly and mixes in the print of the other side: *Le Moniteur
+universel* for 1812, *The London Gazette* for the Crimea, an Ottoman gazette
+for the Russo-Turkish war, and *Asahi Shimbun* and the *Deutsche
+Kriegszeitung* for 1904–1918. Foreign marks are never more than 30% of a level
+and never the mark the level is sized from, so they read as an accent in the
+Russian texture rather than a second texture on top of it.
 
-The price is weight. The set is about two and a half megabytes, fetched only
-when you pick it, and it takes a moment on a slow connection.
+The price of all this is weight. An era is up to four or five megabytes of
+sheets, fetched only when you pick it, and it takes a moment on a slow
+connection.
 
 Nothing recognised those letters. A page with its background removed is ink on
 transparency, so a letter *is* a connected island of ink, and finding those

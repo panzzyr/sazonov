@@ -20,7 +20,7 @@ import {
   MAX_EXPORT_FRAMES,
   type ExportSource,
 } from "./export/renderSequence";
-import { activePreset, bandGlyphs, levelMarks, librarySpecs, presets } from "./presets";
+import { activePreset, bandGlyphs, levelMarks, librarySpecs, presetEraList } from "./presets";
 import { decodeSettings, encodeSettings, hasCustomMarks, parseSettings } from "./projectState";
 import { useGlyphArtStore } from "./store";
 import {
@@ -649,25 +649,31 @@ export function App() {
           {!halftoning && (
             <section className="panel-block">
               <h2><Icon name="presets" />presets</h2>
-              <div className="preset-grid">
-                {presets.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    aria-pressed={preset?.id === entry.id}
-                    onClick={() => usePreset(entry)}
-                  >
-                    {entry.label}
-                  </button>
-                ))}
-              </div>
+              {presetEraList.map((era) => (
+                <div key={era.label} className="preset-era">
+                  <p className="preset-era-label">{era.label}</p>
+                  <div className="preset-grid">
+                    {era.presets.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        aria-pressed={preset?.id === entry.id}
+                        aria-label={entry.label}
+                        onClick={() => usePreset(entry)}
+                      >
+                        {entry.variant}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
               <p className="control-hint">
-                Each set is scanned type and marks of its period, sorted onto twelve levels.
-                The hand-picked sets print two marks on every level and four on the darkest,
-                a mark serving two or three levels at different sizes. 1812 prints every one
-                of its nearly three thousand marks — a couple of hundred to a level — and
-                loads a couple of megabytes when you pick it. Only the marks change — the
-                grid, the levels and the inversions stay where you put them.
+                Each era is the type of its war, cut from newspapers, decrees and posters, and
+                every Russian mark of it prints — hundreds to a level, so a mark seldom repeats.
+                The second preset of an era mixes in the foreign print of the same war, never
+                more than 30% of a level. An era loads its sheets, up to a few megabytes, when
+                you pick it. Only the marks change — the grid, the levels and the inversions
+                stay where you put them.
               </p>
             </section>
           )}

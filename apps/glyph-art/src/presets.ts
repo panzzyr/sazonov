@@ -2,29 +2,42 @@
  * The shipped mark sets.
  *
  * `generatedPresets.ts` is written by `scripts/build-glyph-presets.mjs` and
- * holds the data, compactly: the sprite sheets of each set, where every mark
- * sits on them, and which marks print on each of the twelve levels. This
- * module is the part that is written by hand — turning that into specs and
- * ids, and what applying a preset actually does to a project.
+ * holds the data, compactly: groups of marks packed on sprite sheets, and the
+ * eras built from them. This module is the part that is written by hand —
+ * turning that back into specs, ids and levels, and what applying a preset
+ * actually does to a project.
+ *
+ * **An era is two presets.** Each period's Russian marks make one; where the
+ * war left foreign print too — French in 1812, English in the Crimea, Ottoman,
+ * Japanese and German — the second is the same Russian ramp with foreign marks
+ * mixed into every level at no more than 30% of it. Both share the Russian
+ * sheets, so switching between them loads only the foreign ones.
  *
  * It changes the marks and nothing else. Not the grid, not the levels, not the
  * inversion: those belong to the picture on screen, and a set of marks knows
  * nothing about it. The one thing it does bring with it is the shape of its own
  * ramp — twelve levels, the ink the darkest of them can ask for, and the size
  * ceiling those two were solved against — because that is a fact about the
- * marks rather than a preference. Airy letterpress cannot cover as much of a
- * cell as a solid woodblock without spilling out of it.
+ * marks rather than a preference.
  *
- * **A band holds a preset level by reference.** The 1812 set prints every one
- * of its nearly three thousand marks, a couple of hundred per level. Written
- * out as ids, that is half a megabyte in every saved project, every undo step
- * and every share link. So a preset puts one id per band — `level:<set>:<n>`,
- * standing for every mark on that level of that set — and `bandGlyphs` expands
- * it wherever a band's marks are read. The marks themselves are never copied
- * into `settings.glyphs`; they come from this build, like their paths.
+ * **A band holds a preset level by reference.** A level is hundreds of marks.
+ * Written out as ids, that is megabytes in every saved project, every undo
+ * step and every share link. So a preset puts one id per band —
+ * `level:<preset>:<n>`, standing for every mark on that level — and
+ * `bandGlyphs` expands it wherever a band's marks are read. The marks
+ * themselves are never copied into `settings.glyphs`; they come from this
+ * build, like their paths.
  */
 
-import { presetData, type PresetData } from "./generatedPresets";
+import {
+  presetEras,
+  presetGroups,
+  presetLevelAlphabet,
+  presetLevels,
+  presetSizeAlphabet,
+  type PresetGroupData,
+} from "./generatedPresets";
+import { packShelves } from "./sheetPacking";
 import type { Band, GlyphSpec, Settings } from "./types";
 
 export { presetLevels, presetMaxSize } from "./generatedPresets";
@@ -32,6 +45,10 @@ export { presetLevels, presetMaxSize } from "./generatedPresets";
 export type Preset = {
   id: string;
   label: string;
+  /** The era's own name, shared by its Russian and its foreign preset. */
+  era: string;
+  /** Which of the era's presets this is: `Russian`, or the foreign mix. */
+  variant: string;
   /** Ink coverage of the darkest level, 0..1. */
   peak: number;
   /** Size ceiling in cells that the levels were solved against. */
@@ -39,30 +56,92 @@ export type Preset = {
   glyphs: GlyphSpec[];
   /** Mark ids per level, lightest first. The first of each is the ramp's reference. */
   levels: string[][];
+  /** The foreign marks among `glyphs`; empty for a Russian preset. */
+  foreign: string[];
 };
 
-function unpack(data: PresetData): Preset {
-  const ids = data.marks.map(([slug]) => `preset-${data.id}-${slug}`);
-  return {
-    id: data.id,
-    label: data.label,
-    peak: data.peak,
-    maxSize: data.maxSize,
-    glyphs: data.marks.map(([slug, sheet, x, y, width, height], index) => ({
-      id: ids[index],
-      label: `${data.label} ${slug}`,
-      kind: "preset",
-      source: data.sheets[sheet],
-      rect: [x, y, width, height],
-    })),
-    levels: data.levels.map((level) => level.map((index) => ids[index])),
-  };
+/** A group's marks, placed on its sheets by replaying the build's packing. */
+function unpackGroup(data: PresetGroupData): GlyphSpec[] {
+  const sizes: [number, number][] = [];
+  for (let index = 0; index < data.sizes.length; index += 2) {
+    sizes.push([
+      presetSizeAlphabet.indexOf(data.sizes[index]) + 1,
+      presetSizeAlphabet.indexOf(data.sizes[index + 1]) + 1,
+    ]);
+  }
+  return packShelves(sizes).places.map((place, index) => ({
+    id: `preset-${data.id}-${index}`,
+    label: `${data.id} ${index}`,
+    kind: "preset",
+    source: data.sheets[place.sheet][0],
+    rect: [place.x, place.y, sizes[index][0], sizes[index][1]],
+  }));
 }
 
-export const presets: Preset[] = presetData.map(unpack);
+const groupGlyphs = new Map(presetGroups.map((data) => [data.id, unpackGroup(data)]));
+const glyphsOf = (groups: string[]) => groups.flatMap((id) => groupGlyphs.get(id) ?? []);
+
+/**
+ * An era's levels, as ids: one character per mark naming its level, or — for
+ * an era small enough to reuse marks — indices per level. The reference moves
+ * to the front of its level.
+ */
+function decodeLevels(levels: string | number[][], references: number[], ids: string[]): string[][] {
+  if (typeof levels !== "string") return levels.map((level) => level.map((index) => ids[index]));
+  const decoded: string[][] = Array.from({ length: presetLevels }, () => []);
+  for (let index = 0; index < levels.length; index += 1) {
+    const level = presetLevelAlphabet.indexOf(levels[index]);
+    if (level >= 0) decoded[level].push(ids[index]);
+  }
+  return decoded.map((level, index) => {
+    const reference = references[index] ?? -1;
+    if (reference < 0) return level;
+    const id = ids[reference];
+    return [id, ...level.filter((entry) => entry !== id)];
+  });
+}
+
+export const presets: Preset[] = presetEras.flatMap((era) => {
+  const nativeGlyphs = glyphsOf(era.native.groups);
+  const nativeLevels = decodeLevels(
+    era.native.levels,
+    era.native.references,
+    nativeGlyphs.map((glyph) => glyph.id),
+  );
+  const shared = { era: era.label, peak: era.peak, maxSize: era.maxSize };
+  const russian: Preset = {
+    ...shared,
+    id: era.id,
+    label: era.label,
+    variant: "Russian",
+    glyphs: nativeGlyphs,
+    levels: nativeLevels,
+    foreign: [],
+  };
+  if (!era.foreign) return [russian];
+
+  const foreignGlyphs = glyphsOf(era.foreign.groups);
+  const foreignLevels = decodeLevels(era.foreign.levels, [], foreignGlyphs.map((glyph) => glyph.id));
+  return [russian, {
+    ...shared,
+    id: era.foreign.id,
+    label: `${era.label} ${era.foreign.label}`,
+    variant: era.foreign.label,
+    glyphs: [...nativeGlyphs, ...foreignGlyphs],
+    // Russian first, so every level's reference stays the Russian one.
+    levels: nativeLevels.map((level, index) => [...level, ...foreignLevels[index]]),
+    foreign: foreignLevels.flat(),
+  }];
+});
+
+/** The presets grouped by era, in the order the tool lists them. */
+export const presetEraList = presetEras.map((era) => ({
+  label: era.label,
+  presets: presets.filter((preset) => preset.era === era.label),
+}));
 
 const presetGlyphMap = new Map(
-  presets.flatMap((preset) => preset.glyphs.map((glyph) => [glyph.id, glyph] as const)),
+  [...groupGlyphs.values()].flatMap((glyphs) => glyphs.map((glyph) => [glyph.id, glyph] as const)),
 );
 
 /** Every shipped mark id, for validating untrusted project files. */
@@ -97,8 +176,8 @@ function readToken(id: string) {
 
 /**
  * The marks a level reference stands for, or undefined when `id` is not one —
- * or names a set or a level this build does not ship, which is how a reference
- * from an untrusted file is validated.
+ * or names a preset or a level this build does not ship, which is how a
+ * reference from an untrusted file is validated.
  */
 export function levelMarks(id: string): readonly string[] | undefined {
   const token = readToken(id);
