@@ -74,6 +74,53 @@ export function cycleIndex(
   return (step + phase) % poolLength;
 }
 
+/** Running totals of a band's weights, for `weightedCycleIndex`. */
+export function cumulativeWeights(weights: readonly number[]) {
+  const totals = new Float64Array(weights.length);
+  let total = 0;
+  weights.forEach((weight, index) => {
+    total += Math.max(0, weight);
+    totals[index] = total;
+  });
+  return totals;
+}
+
+/** Steps a cell's pick along by the golden ratio, so no two steps land close. */
+const goldenStep = 0.6180339887498949;
+
+/**
+ * Which mark of a weighted band this cell shows on this frame.
+ *
+ * The weighted counterpart of `cycleIndex`: the cell's phase is a point on the
+ * band's running total, so a mark is picked in proportion to its weight — for
+ * a preset level, one over the impressions of its letterform, which makes
+ * every letterform equally likely. Each step moves the point on by the golden
+ * ratio, which visits the whole total evenly and never lands back where it
+ * was, so a cycling cell still changes its mark every step.
+ */
+export function weightedCycleIndex(
+  seed: number,
+  cellIndex: number,
+  cumulative: Float64Array,
+  frame: number,
+  hold: number,
+) {
+  const length = cumulative.length;
+  if (length <= 1) return 0;
+  const total = cumulative[length - 1];
+  if (!(total > 0)) return 0;
+  const step = Math.floor(frame / Math.max(1, hold));
+  const position = ((randomFloat(seed, 0, cellIndex, PHASE) + step * goldenStep) % 1) * total;
+  let low = 0;
+  let high = length - 1;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (cumulative[middle] > position) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+}
+
 function greatestCommonDivisor(a: number, b: number): number {
   return b === 0 ? a : greatestCommonDivisor(b, a % b);
 }

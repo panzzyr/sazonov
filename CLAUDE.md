@@ -324,6 +324,25 @@ difference: the marks furthest from everything else on a page are its
 oddities (blots, blocks of type fused by `--join`), so those are an even
 sample (`spread`) that keeps the page's proportions.
 
+**A level is picked by letterform, not by impression.** Newspaper text is
+mostly о, е, а, и, н, so a level cut from it is mostly impressions of those,
+and a uniform pick prints a few dozen letterforms over and over however many
+marks the level holds. The builder groups each level's marks by shape
+thumbnail (`letterforms`, `LETTERFORM`) and ships each mark's group size; a
+mark weighs one over it (`Preset.weights`, `bandWeights`), and the renderer
+picks with `weightedCycleIndex` — every letterform equally likely, every
+impression still used. Foreign weights are scaled so they carry at most 30% of
+a level's weight, as they are held to 30% of its marks. A project's own marks
+in a band weigh 1 each and are picked uniformly.
+
+**The darkest three levels take only sharp marks** — a blur of at most 1.6 px
+(`DARK_MAX_BLUR`: the width of the ramp from paper to solid ink across an
+edge, which unlike a share of solid ink does not punish small type) and at
+least 18 px on the long side (`DARK_MIN_EDGE`) — because they print a mark at a cell and more, and a soft
+or small scan stretched that far is a smudge. A mark that fails goes lighter.
+Hand-picked foreign marks (a group's top-level scans, like the ¡No pasarán!
+fist) always print, on the level with room that suits them best.
+
 **Spacing is pitch, not size.** `settings.spacing` (`column gap`, `row gap`)
 adds paper between marks as a share of a mark's cell. `grid` still fixes that
 cell, so a gap reduces the columns or rows (`gridSize`), cells stop being

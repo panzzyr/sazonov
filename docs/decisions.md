@@ -1,5 +1,26 @@
 # Architecture decisions
 
+## 2026-09-15 — glyph art picks by letterform, and keeps soft marks out of the shadows
+
+- **Decision:** Each level's marks are grouped by letterform — leader
+  clustering on their shape thumbnails — and each mark ships its group size;
+  the renderer picks with weights of one over it, so every letterform of a
+  level is equally likely. The darkest three levels take only marks whose
+  edge ramps from paper to solid ink in at most 1.6 px, and that are at least
+  18 px on their long side. Hand-picked foreign marks always print.
+- **Alternatives:** Cap each letterform to a few impressions per level and drop
+  the rest. Leave the pick uniform and add material. Judge sharpness by the
+  share of ink at full strength — tried, and it emptied the dark levels of the
+  eras cut from small type, where a sharp 20 px letter is still mostly edge.
+- **Reason:** With hundreds of marks on a level, pictures still read as the
+  same couple of dozen letters, because newspaper text is: о, е, а, и and н are
+  nearly half of Russian. Weighting keeps every impression in use and takes the
+  frequency of the language out of the picture. The raised dark ceiling had
+  pulled soft and small scans onto the levels that print largest.
+- **Consequences:** Two more characters per mark in the bundle (a primary and
+  a reuse weight, the latter mostly `-`). Foreign weights are scaled to at most
+  30% of a level's weight. The project's own marks keep the uniform pick.
+
 ## 2026-09-14 — glyph art deepens the dark levels, and samples pages evenly
 
 - **Decision:** Three more eras — 1936–1940 (Spain, Khalkhin Gol, Finland),

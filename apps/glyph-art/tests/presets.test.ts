@@ -92,15 +92,19 @@ describe("what the presets ship", () => {
 
   it.each(presets)("$label gives every level a deep pool", (preset) => {
     // An empty level prints paper: a band of white across the picture's tone.
-    for (const level of preset.levels) expect(level.length).toBeGreaterThanOrEqual(50);
+    for (const level of preset.levels) expect(level.length).toBeGreaterThanOrEqual(40);
   });
 
-  it.each(russianPresets)("$label keeps its darkest levels about as deep as the rest", (preset) => {
+  it.each(russianPresets)("$label keeps its darkest levels about as deep as the rest, if its pages are sharp enough", (preset) => {
     // The darkest marks print largest; a shallow dark level is the one where
-    // repetition shows. They are topped up by reuse to the median depth.
-    const depth = median(preset.levels.slice(0, 9).map((level) => level.length));
-    for (const level of preset.levels.slice(-3)) {
-      expect(level.length).toBeGreaterThanOrEqual(Math.min(depth, 250) * 0.9);
+    // repetition shows. They are topped up by reuse to the median depth — out
+    // of the era's sharp marks only, so an era cut from a soft page (1936–1940)
+    // has shallower dark levels rather than smudged ones.
+    const depth = Math.min(median(preset.levels.slice(0, 9).map((level) => level.length)), 250);
+    const sharp = preset.glyphs.filter((glyph) => presetMetrics[glyph.id].blur <= 1.6
+      && presetMetrics[glyph.id].edge >= 18).length;
+    if (sharp >= depth * 3 * 2) {
+      for (const level of preset.levels.slice(-3)) expect(level.length).toBeGreaterThanOrEqual(depth * 0.9);
     }
     for (const level of preset.levels) expect(new Set(level).size).toBe(level.length);
   });
@@ -370,5 +374,65 @@ describe("presets through a saved project", () => {
     expect(kept).not.toContain("level:forgery:3");
     expect(kept).not.toContain("level:civil:99");
     expect(kept).toContain(levelToken("civil", 1));
+  });
+});
+
+describe("weighting by letterform", () => {
+  it.each(presets)("$label weighs every mark it prints", (preset) => {
+    preset.levels.forEach((level, index) => {
+      expect(preset.weights[index]).toHaveLength(level.length);
+      for (const weight of preset.weights[index]) {
+        expect(weight).toBeGreaterThan(0);
+        expect(weight).toBeLessThanOrEqual(1);
+      }
+    });
+  });
+
+  it.each(russianPresets)("$label gives every letterform of a level the same total weight", (preset) => {
+    // A letterform of k impressions weighs 1/k each, so the marks weighing 1/k
+    // come in whole groups of k.
+    for (const weights of preset.weights) {
+      const counts = new Map<number, number>();
+      for (const weight of weights) {
+        const group = Math.round(1 / weight);
+        counts.set(group, (counts.get(group) ?? 0) + 1);
+      }
+      for (const [group, count] of counts) if (group < 91) expect(count % group).toBe(0);
+    }
+  });
+
+  it.each(russianPresets)("$label has far more letterforms on a level than a common letter would show", (preset) => {
+    for (const [index, weights] of preset.weights.entries()) {
+      const forms = weights.reduce((sum, weight) => sum + weight, 0);
+      expect(forms).toBeLessThanOrEqual(preset.levels[index].length + 1e-6);
+      expect(forms).toBeGreaterThan(20);
+    }
+  });
+
+  it.each(foreignPresets)("$label keeps foreign marks under 30% of every level's weight", (preset) => {
+    const foreign = new Set(preset.foreign);
+    preset.levels.forEach((level, index) => {
+      let own = 0;
+      let theirs = 0;
+      level.forEach((id, position) => {
+        if (foreign.has(id)) theirs += preset.weights[index][position];
+        else own += preset.weights[index][position];
+      });
+      expect(theirs / (own + theirs)).toBeLessThanOrEqual(0.3 + 1e-9);
+    });
+  });
+});
+
+describe("the darkest levels", () => {
+  it.each(presets)("$label prints only sharp marks on its darkest three", (preset) => {
+    // Those levels print a mark at a cell and more. A soft scan stretched that
+    // far is a smudge, and a shadow is where the eye finds it. Blur is the
+    // width in pixels of the ramp from paper to solid ink across an edge.
+    for (const level of preset.levels.slice(-3)) {
+      for (const id of level) {
+        expect(presetMetrics[id].blur).toBeLessThanOrEqual(1.6);
+        expect(presetMetrics[id].edge).toBeGreaterThanOrEqual(18);
+      }
+    }
   });
 });

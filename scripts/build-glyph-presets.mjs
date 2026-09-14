@@ -80,6 +80,29 @@ const MAX_SIZE = 1.15;
  */
 const DARK_CEILING = 1.45;
 
+/**
+ * What a mark needs to print on the darkest three levels: a sharp edge — its
+ * blur, the width in pixels of the ramp from paper to solid ink — and enough
+ * pixels on its long side. Those levels print a mark at a cell and more, and
+ * a soft scan stretched to that size reads as a smudge, which is the first
+ * thing the eye finds in a shadow. A mark that fails still prints, on a
+ * lighter level, smaller, where the softness does not show.
+ *
+ * Blur is measured as a width rather than as the share of ink at full
+ * strength, because that share punishes small type: a 20 px letter is mostly
+ * edge however sharp it is. A crisp impression ramps in a pixel or a pixel and
+ * a half at any size; the soft *Moniteur* page ramps in nearly five.
+ */
+const DARK_MAX_BLUR = 1.6;
+const DARK_MIN_EDGE = 18;
+
+/**
+ * Two marks whose shape thumbnails are closer than this are one letterform:
+ * two impressions of the same sort. A level is weighted by letterform, not by
+ * impression — see `letterforms`.
+ */
+const LETTERFORM = 0.15;
+
 /** Below this a mark is grit rather than a mark. */
 const MIN_SIZE = 0.14;
 
@@ -304,9 +327,25 @@ async function measure(buffer) {
     for (let x = left; x <= right; x += 1) sum += ink[y * width + x];
   }
 
+  // Blur: the pixels between paper and solid ink, over the length of the solid
+  // core's outline — how wide, on average, the ramp across the edge is.
+  const solid = (x, y) => x >= 0 && y >= 0 && x < width && y < height && ink[y * width + x] > 0.7;
+  let ramp = 0;
+  let outline = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const value = ink[y * width + x];
+      if (value > 0.15 && value <= 0.7) ramp += 1;
+      if (value > 0.7 && (!solid(x - 1, y) || !solid(x + 1, y) || !solid(x, y - 1) || !solid(x, y + 1))) {
+        outline += 1;
+      }
+    }
+  }
+
   return {
     width,
     height,
+    blur: outline ? ramp / outline : Infinity,
     density: sum / (boxWidth * boxHeight),
     aspect: boxWidth / boxHeight,
     stroke: strokeWidth(ink, width, height, Math.max(boxWidth, boxHeight)),
@@ -344,6 +383,18 @@ function signature(ink, width, box) {
     }
   }
   return thumb;
+}
+
+/** Whether two thumbnails are within `limit` RMS of each other, giving up early. */
+function within(a, b, limit) {
+  const budget = limit * limit * a.length;
+  let total = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    const delta = a[index] - b[index];
+    total += delta * delta;
+    if (total >= budget) return false;
+  }
+  return true;
 }
 
 /** RMS difference between two thumbnails: 0 is the same mark twice. */
@@ -424,6 +475,13 @@ function solvePeak(marks, pool) {
 }
 
 const coverageFor = (tone, peak) => peak * tone ** WEIGHT;
+
+/** Whether a mark is sharp enough, and large enough in pixels, for the darkest levels. */
+const printsSharply = (mark) => mark.blur <= DARK_MAX_BLUR
+  && Math.max(mark.width, mark.height) >= DARK_MIN_EDGE;
+
+/** Whether a mark may go on a level at all, before its size is asked. */
+const fitsLevel = (mark, level) => level < DARK_FROM || printsSharply(mark);
 
 /** The size ceiling of a level: `MAX_SIZE`, climbing to `DARK_CEILING` over the darkest three. */
 const ceilingFor = (level) => MAX_SIZE
@@ -530,7 +588,7 @@ function dealEvery(marks, peak) {
     // War that left level 8 with none at all. The dark levels are deepened
     // afterwards, by `topUpDark`, from marks that are already placed.
     const eligible = [...left]
-      .filter((mark) => score(mark, coverage) > 0)
+      .filter((mark) => fitsLevel(mark, level) && score(mark, coverage) > 0)
       .sort((a, b) => cellCoverage(b) - cellCoverage(a));
     const share = Math.ceil(left.size / (level + 1));
     for (const mark of eligible.slice(0, share)) {
@@ -545,6 +603,7 @@ function dealEvery(marks, peak) {
     let best = -1;
     let bestValue = 0;
     for (let level = 0; level < LEVELS; level += 1) {
+      if (!fitsLevel(mark, level)) continue;
       const value = score(mark, coverageFor(bandCenter(level), peak));
       if (value > bestValue) {
         bestValue = value;
@@ -600,7 +659,8 @@ function topUpDark(levels, marks, peak) {
     const ceiling = ceilingFor(level);
     const onLevel = new Set(levels[level]);
     const eligible = marks
-      .filter((mark) => !onLevel.has(mark) && !extra.has(mark) && score(mark, coverage, ceiling) > 0)
+      .filter((mark) => !onLevel.has(mark) && !extra.has(mark) && printsSharply(mark)
+        && score(mark, coverage, ceiling) > 0)
       .sort((a, b) => cellCoverage(b) - cellCoverage(a));
     for (const mark of spread(eligible, want)) {
       levels[level].push(mark);
@@ -666,19 +726,71 @@ function assignLevels(marks, peak) {
  */
 function dealForeign(marks, peak, nativeLevels) {
   const levels = Array.from({ length: LEVELS }, () => []);
+  const caps = nativeLevels.map((level) => Math.floor((level.length * FOREIGN_SHARE) / (1 - FOREIGN_SHARE)));
   const used = new Set();
+
+  // A foreign mark picked by hand — a symbol chosen for itself, like the fist
+  // of ¡No pasarán! — always prints, on the level with room that prints it best.
+  for (const mark of marks.filter((entry) => entry.hand)) {
+    let best = -1;
+    let bestValue = 0;
+    for (let level = 0; level < LEVELS; level += 1) {
+      if (levels[level].length >= caps[level] || !fitsLevel(mark, level)) continue;
+      const value = score(mark, coverageFor(bandCenter(level), peak), ceilingFor(level));
+      if (value > bestValue) {
+        bestValue = value;
+        best = level;
+      }
+    }
+    if (best < 0) continue;
+    levels[best].push(mark);
+    used.add(mark);
+  }
+
   for (let level = LEVELS - 1; level >= 0; level -= 1) {
-    const cap = Math.floor((nativeLevels[level].length * FOREIGN_SHARE) / (1 - FOREIGN_SHARE));
     const coverage = coverageFor(bandCenter(level), peak);
     const ceiling = ceilingFor(level);
     const eligible = marks
-      .filter((mark) => !used.has(mark) && score(mark, coverage, ceiling) > 0)
+      .filter((mark) => !used.has(mark) && fitsLevel(mark, level) && score(mark, coverage, ceiling) > 0)
       .sort((a, b) => cellCoverage(b) - cellCoverage(a));
-    const picked = spread(eligible, cap);
+    const picked = spread(eligible, caps[level] - levels[level].length);
     for (const mark of picked) used.add(mark);
-    levels[level] = picked;
+    levels[level].push(...picked);
   }
   return levels;
+}
+
+/**
+ * Groups a level's marks by letterform, and returns each mark's group size.
+ *
+ * Newspaper text is mostly the same few letters — о, е, а, и, н are nearly
+ * half of Russian — so a level cut from it is mostly impressions of those, and
+ * a cell picking among its marks at random prints them again and again: a few
+ * dozen letterforms by eye, out of hundreds of marks. So the app picks a
+ * letterform first, all equally likely, and then an impression of it; each
+ * mark's weight is one over the size of its group. Leader clustering on the
+ * shape thumbnails, in the level's own order, so a rebuild gives the same
+ * groups.
+ */
+function letterforms(level) {
+  const leaders = [];
+  const home = new Map();
+  for (const mark of level) {
+    let found = null;
+    for (const leader of leaders) {
+      if (within(mark.signature, leader.signature, LETTERFORM)) {
+        found = leader;
+        break;
+      }
+    }
+    if (!found) {
+      found = { signature: mark.signature, size: 0 };
+      leaders.push(found);
+    }
+    found.size += 1;
+    home.set(mark, found);
+  }
+  return { size: new Map([...home].map(([mark, leader]) => [mark, leader.size])), count: leaders.length };
 }
 
 /* ------------------------------------------------------------------ writing */
@@ -738,6 +850,7 @@ async function imagesIn(directory) {
 /** Reads a group's scans — hand-picked and harvested alike — and measures them. */
 async function loadGroup(group) {
   const directory = path.join(sourceRoot, group.id);
+  const handPicked = new Set(await imagesIn(directory));
   let harvested = await imagesIn(path.join(directory, "harvested"));
   if (group.limit && harvested.length > group.limit) {
     const all = harvested;
@@ -759,7 +872,7 @@ async function loadGroup(group) {
       skipped.push(file);
       continue;
     }
-    marks.push({ group: group.id, slug, buffer, ...metrics });
+    marks.push({ group: group.id, slug, hand: handPicked.has(file), buffer, ...metrics });
   }
   if (marks.length === 0) throw new Error(`${group.id}: no marks in ${directory}.`);
   return { ...group, marks, skipped, candidates: files.length };
@@ -869,7 +982,9 @@ async function buildEra(era, loaded) {
     foreign = { ...era.foreign, groups: foreignGroups, marks, levels: dealForeign(marks, peak, nativeLevels) };
   }
 
-  return { ...era, small, peak, nativeGroups, native, nativeLevels, nativeExtra, foreign };
+  const nativeForms = nativeLevels.map(letterforms);
+  if (foreign) foreign.forms = foreign.levels.map(letterforms);
+  return { ...era, small, peak, nativeGroups, native, nativeLevels, nativeExtra, nativeForms, foreign };
 }
 
 /* ------------------------------------------------------------- serialising */
@@ -889,6 +1004,23 @@ function levelString(marks, levels, extra = new Map()) {
 /** One character per mark: the dark level it is reused on, or `-`. */
 function extraString(marks, extra) {
   return marks.map((mark) => (extra.has(mark) ? LEVEL_ALPHABET[extra.get(mark)] : "-")).join("");
+}
+
+/**
+ * One character per mark: how many impressions share its letterform on its
+ * level — the app weighs it one over that — from the size alphabet, or `-`.
+ * `reused` picks a mark's extra dark level instead of its first one.
+ */
+function weightString(marks, levels, forms, extra = new Map(), reused = false) {
+  const level = new Map();
+  levels.forEach((pool, index) => pool.forEach((mark) => {
+    if ((extra.get(mark) === index) === reused) level.set(mark, index);
+  }));
+  return marks.map((mark) => {
+    if (!level.has(mark)) return "-";
+    const size = forms[level.get(mark)].size.get(mark);
+    return SIZE_ALPHABET[Math.min(SIZE_ALPHABET.length, size) - 1];
+  }).join("");
 }
 
 /**
@@ -931,8 +1063,12 @@ function serialize(groupsBuilt, erasBuilt) {
     "    references: number[];",
     "    /** One character per mark: a dark level it prints on as well, at a larger size, or `-`. */",
     "    extra: string;",
+    "    /** One character per mark: impressions sharing its letterform on its level (size alphabet). */",
+    "    weights: string;",
+    "    /** The same, for its extra dark level. */",
+    "    extraWeights: string;",
     "  };",
-    "  foreign?: { id: string; label: string; groups: string[]; levels: string };",
+    "  foreign?: { id: string; label: string; groups: string[]; levels: string; weights: string };",
     "};",
     "",
     `export const presetLevels = ${LEVELS};`,
@@ -966,12 +1102,15 @@ function serialize(groupsBuilt, erasBuilt) {
       : `      levels: ${JSON.stringify(levelString(era.native, era.nativeLevels, era.nativeExtra))},`);
     lines.push(`      references: ${JSON.stringify(era.nativeLevels.map((level) => (level.length ? index.get(level[0]) : -1)))},`);
     lines.push(`      extra: ${JSON.stringify(era.small ? "" : extraString(era.native, era.nativeExtra))},`);
+    lines.push(`      weights: ${JSON.stringify(era.small ? "" : weightString(era.native, era.nativeLevels, era.nativeForms, era.nativeExtra))},`);
+    lines.push(`      extraWeights: ${JSON.stringify(era.small ? "" : weightString(era.native, era.nativeLevels, era.nativeForms, era.nativeExtra, true))},`);
     lines.push("    },");
     if (era.foreign) {
       lines.push(
         `    foreign: { id: ${JSON.stringify(era.foreign.id)}, label: ${JSON.stringify(era.foreign.label)},`
         + ` groups: ${JSON.stringify(era.foreign.groups.map((group) => group.id))},`
-        + ` levels: ${JSON.stringify(levelString(era.foreign.marks, era.foreign.levels))} },`,
+        + ` levels: ${JSON.stringify(levelString(era.foreign.marks, era.foreign.levels))},`
+        + ` weights: ${JSON.stringify(weightString(era.foreign.marks, era.foreign.levels, era.foreign.forms))} },`,
       );
     }
     lines.push("  },");
@@ -993,11 +1132,14 @@ function serializeMetrics(groupsBuilt) {
     "// reaches the bundle: the browser measures each mark again on load, off the",
     "// same pixels by the same rule, and gets the same numbers.",
     "",
-    "export const presetMetrics: Record<string, { density: number; aspect: number }> = {",
+    "export const presetMetrics: Record<string, { density: number; aspect: number; blur: number; edge: number }> = {",
   ];
   for (const group of groupsBuilt) {
     for (const mark of group.marks) {
-      lines.push(`  ${JSON.stringify(mark.id)}: { density: ${mark.density.toFixed(5)}, aspect: ${mark.aspect.toFixed(5)} },`);
+      lines.push(
+        `  ${JSON.stringify(mark.id)}: { density: ${mark.density.toFixed(5)}, aspect: ${mark.aspect.toFixed(5)},`
+        + ` blur: ${Number.isFinite(mark.blur) ? mark.blur.toFixed(3) : 99}, edge: ${Math.max(mark.width, mark.height)} },`,
+      );
     }
   }
   lines.push("};", "");
@@ -1094,7 +1236,9 @@ async function main() {
     console.log(
       `${era.label}\n  Russian  ${String(printed).padStart(5)} of ${String(era.native.length).padStart(5)} marks`
       + `  peak ${(era.peak * 100).toFixed(0)}%  ${megabytes(nativeIds)} MB${era.small ? "  (chosen, with reuse)" : ""}`
-      + `\n  pool     ${era.nativeLevels.map((level) => String(level.length).padStart(4)).join(" ")}`,
+      + `\n  pool     ${era.nativeLevels.map((level) => String(level.length).padStart(4)).join(" ")}`
+      + `\n  forms    ${era.nativeForms.map((forms) => String(forms.count).padStart(4)).join(" ")}`
+      + `\n  sharp    ${era.nativeLevels.map((level) => `${Math.round((level.filter(printsSharply).length / (level.length || 1)) * 100)}%`.padStart(4)).join(" ")}`,
     );
     if (era.foreign) {
       const foreignIds = era.foreign.groups.map((group) => group.id);

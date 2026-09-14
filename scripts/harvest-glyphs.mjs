@@ -449,7 +449,7 @@ async function harvest(file, options) {
     if (coreFill(data, width, box) > MAX_CORE_FILL) continue;
 
     const crisp = crispness(data, width, box);
-    if (crisp < MIN_CRISP) continue;
+    if (crisp < (options.minCrisp ?? MIN_CRISP)) continue;
 
     candidates.push({
       box,
@@ -508,12 +508,17 @@ async function main() {
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--join") options.join = Math.max(0, Number(args[++index]) || 0);
     else if (args[index] === "--singles") options.singles = true;
+    // A soft scan's type never gets to full strength at its edges, so the
+    // crispness filter rejects letters with the stains. Lowering it takes the
+    // letters of a soft page; the builder keeps them off the darkest levels,
+    // where they would print large enough for the softness to show.
+    else if (args[index] === "--min-crisp") options.minCrisp = Number(args[++index]);
     else positional.push(args[index]);
   }
   const [set, ...pages] = positional;
   if (!set || pages.length === 0) {
     throw new Error(
-      "usage: node scripts/harvest-glyphs.mjs <set-id> [--join <px>] [--singles] <page.png> [pages...]",
+      "usage: node scripts/harvest-glyphs.mjs <set-id> [--join <px>] [--singles] [--min-crisp <0..1>] <page.png> [pages...]",
     );
   }
 

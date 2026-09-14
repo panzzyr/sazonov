@@ -166,6 +166,10 @@ Two options, for print where a mark is not one island.
   Ottoman word is its letters and the dots above and below them. Cut apart,
   they are strokes and specks. The box and the ink are still taken off the page
   as it is. The shipped Japanese page is cut at `--join 4`, the Ottoman at 3.
+- **`--min-crisp <0..1>`** lowers the crispness floor for a soft scan, whose
+  letters never reach full strength at their edges and fail with the stains.
+  The *Moniteur* page is cut at 0.15: 3003 marks instead of 739. The builder
+  keeps soft marks off the darkest levels.
 - **`--singles`** drops the recurrence proof. Kanji and words rarely repeat
   exactly, so without it almost nothing on those pages survives. The other
   filters still apply. The small Petrine *Ведомости* page needs it too.
@@ -274,6 +278,26 @@ the cell a mark overlaps its neighbours, which is what the shadows should do —
 and each of those levels is then topped up to the median depth of the rest
 with marks already dealt elsewhere that also print there, at a larger size. A
 mark is reused on one extra level at most.
+
+Only sharp marks go there. Those levels print a mark at a cell and more, so a
+soft scan, or a small one stretched that far, reads as a smudge — and the
+darkest part of a picture is where the eye goes first. A mark needs a sharp
+edge — a ramp from paper to solid ink at most 1.6 px wide, measured along the
+outline of its solid core — and 18 px on its long side to print on the darkest
+three. (An earlier build asked for half the ink at full strength instead, and
+that shut out small type however sharp: a 20 px letter is mostly edge.) One
+that fails prints on a lighter level, smaller,
+where its softness does not show.
+
+### Picking by letterform
+
+Every cell picks from its whole level, but newspaper text is mostly о, е, а,
+и and н, and so is a level cut from it: picked by impression, a picture is a
+few dozen letterforms over and over. So each level's marks are grouped by
+shape — two impressions of the same sort in the same face are one letterform —
+and a mark weighs one over the size of its group. The app picks a letterform,
+every one equally likely, and then an impression of it. Every mark is still
+used; the rare ones simply come up as often as the common ones.
 
 ### Foreign marks: at most 30% of a level
 
@@ -434,6 +458,10 @@ Current: 21.2 MB across 26 groups; the heaviest preset is the Civil War at
 7. `pnpm check`, then commit — the two generated modules and
    `apps/glyph-art/public/presets/<set-id>/` only. The pages and the candidates
    stay out of git.
+
+A whole symbol that is not type — the fist of *¡No pasarán!* — goes in as a
+hand-picked scan. A hand-picked foreign mark always prints, on the level with
+room that suits it best.
 
 Mixing sources works: hand-picked scans go in `assets/glyph-presets/<set-id>/`,
 harvested ones in its `harvested/` subdirectory, and the builder treats them

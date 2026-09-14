@@ -16,10 +16,10 @@
  */
 
 import { bandFor, pitchAspect, type ToneField } from "./tone";
-import { cycleIndex, handDraw } from "./cellParams";
+import { cumulativeWeights, cycleIndex, handDraw, weightedCycleIndex } from "./cellParams";
 import { poolCorrection, solveRamp, type SolvedBand } from "./ramp";
 import { drawGlyph, type GlyphLibrary, type MeasuredGlyph } from "./glyphLibrary";
-import { bandGlyphs } from "../presets";
+import { bandGlyphs, bandWeights } from "../presets";
 import { minMarkSize, outputFrameSize, type ExportInk, type Settings } from "../types";
 
 /**
@@ -75,6 +75,11 @@ export function* glyphPlacements(
   // Expanded once per frame rather than per cell: a preset level is one
   // reference in the band and a couple of hundred marks here.
   const pools = settings.bands.map(bandGlyphs);
+  // A preset level is picked by letterform, not by impression; see `bandWeights`.
+  const totals = settings.bands.map((band) => {
+    const weights = bandWeights(band);
+    return weights ? cumulativeWeights(weights) : null;
+  });
 
   for (let y = 0; y < field.gridH; y += 1) {
     for (let x = 0; x < field.gridW; x += 1) {
@@ -86,9 +91,12 @@ export function* glyphPlacements(
       const reference = library.get(pool[0]);
       if (!reference || reference.density <= 0) continue;
 
+      const weighted = totals[band];
       const chosen = pool.length === 1
         ? reference
-        : library.get(pool[cycleIndex(settings.seed, cellIndex, pool.length, frame, settings.hold)]);
+        : library.get(pool[weighted
+          ? weightedCycleIndex(settings.seed, cellIndex, weighted, frame, settings.hold)
+          : cycleIndex(settings.seed, cellIndex, pool.length, frame, settings.hold)]);
       if (!chosen || chosen.density <= 0) continue;
 
       const hand = handDraw(settings.seed, cellIndex, settings.hand);

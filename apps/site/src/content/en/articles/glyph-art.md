@@ -164,7 +164,17 @@ repeat there is the one the eye catches. Only the solid sorts reach that much
 ink inside a cell, so on the darkest three levels a mark may grow past its cell
 — up to a cell and a half, where the shadows are meant to knit into mass — and
 those levels are topped up to the depth of the others with marks from lighter
-levels printed again, larger.
+levels printed again, larger. Only crisp, full-sized impressions print there:
+a soft scan stretched past its cell is a smudge, and it goes to a lighter level
+where it prints small.
+
+Every cell picks from its whole level, but not every mark equally. Newspaper
+text is mostly the same handful of letters, so a level cut from it is mostly
+impressions of those, and picked at random a picture would be a few dozen
+letterforms over and over. So the marks of a level are grouped by letterform,
+and a cell picks a letterform first — each as likely as any other — and then
+one of its impressions. Every mark still prints; the rare letters and faces
+simply come up as often as the common ones.
 
 Where marks are chosen from a handful of hand-picked scans, the marks on a
 level are chosen to be **as unlike each other as possible**, not

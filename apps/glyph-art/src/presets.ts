@@ -56,6 +56,12 @@ export type Preset = {
   glyphs: GlyphSpec[];
   /** Mark ids per level, lightest first. The first of each is the ramp's reference. */
   levels: string[][];
+  /**
+   * How likely each mark of a level is to be picked, parallel to `levels`: one
+   * over the impressions sharing its letterform, so every letterform of a
+   * level is equally likely however common its letter is.
+   */
+  weights: number[][];
   /** The foreign marks among `glyphs`; empty for a Russian preset. */
   foreign: string[];
 };
@@ -86,39 +92,70 @@ const glyphsOf = (groups: string[]) => groups.flatMap((id) => groupGlyphs.get(id
  * an era small enough to reuse marks — indices per level. The reference moves
  * to the front of its level.
  */
+/** A mark's weight: one over the impressions sharing its letterform on its level. */
+function weightOf(weights: string, index: number) {
+  const size = presetSizeAlphabet.indexOf(weights[index] ?? "") + 1;
+  return size > 0 ? 1 / size : 1;
+}
+
+type Decoded = { ids: string[][]; weights: number[][] };
+
+/**
+ * An era's levels, as ids and weights: one character per mark naming its
+ * level, or — for an era small enough to reuse marks — indices per level. The
+ * reference moves to the front of its level.
+ */
 function decodeLevels(
   levels: string | number[][],
   references: number[],
   ids: string[],
   extra = "",
-): string[][] {
-  if (typeof levels !== "string") return levels.map((level) => level.map((index) => ids[index]));
-  const decoded: string[][] = Array.from({ length: presetLevels }, () => []);
+  weights = "",
+  extraWeights = "",
+): Decoded {
+  if (typeof levels !== "string") {
+    return {
+      ids: levels.map((level) => level.map((index) => ids[index])),
+      weights: levels.map((level) => level.map(() => 1)),
+    };
+  }
+  const decoded = Array.from({ length: presetLevels }, () => ({ ids: [] as string[], weights: [] as number[] }));
   for (let index = 0; index < levels.length; index += 1) {
     const level = presetLevelAlphabet.indexOf(levels[index]);
-    if (level >= 0) decoded[level].push(ids[index]);
+    if (level < 0) continue;
+    decoded[level].ids.push(ids[index]);
+    decoded[level].weights.push(weightOf(weights, index));
   }
   // A mark reused on a dark level, at a larger size, to keep that level as
   // deep as the rest.
   for (let index = 0; index < extra.length; index += 1) {
     const level = presetLevelAlphabet.indexOf(extra[index]);
-    if (level >= 0) decoded[level].push(ids[index]);
+    if (level < 0) continue;
+    decoded[level].ids.push(ids[index]);
+    decoded[level].weights.push(weightOf(extraWeights, index));
   }
-  return decoded.map((level, index) => {
+  decoded.forEach((level, index) => {
     const reference = references[index] ?? -1;
-    if (reference < 0) return level;
-    const id = ids[reference];
-    return [id, ...level.filter((entry) => entry !== id)];
+    const position = reference < 0 ? -1 : level.ids.indexOf(ids[reference]);
+    if (position <= 0) return;
+    level.ids.unshift(...level.ids.splice(position, 1));
+    level.weights.unshift(...level.weights.splice(position, 1));
   });
+  return { ids: decoded.map((level) => level.ids), weights: decoded.map((level) => level.weights) };
 }
+
+/** The most of any level's weight that its foreign marks may carry. Matches the build. */
+const foreignShare = 0.3;
 
 export const presets: Preset[] = presetEras.flatMap((era) => {
   const nativeGlyphs = glyphsOf(era.native.groups);
-  const nativeLevels = decodeLevels(
+  const native = decodeLevels(
     era.native.levels,
     era.native.references,
     nativeGlyphs.map((glyph) => glyph.id),
     era.native.extra,
+    era.native.weights,
+    era.native.extraWeights,
   );
   const shared = { era: era.label, peak: era.peak, maxSize: era.maxSize };
   const russian: Preset = {
@@ -127,13 +164,20 @@ export const presets: Preset[] = presetEras.flatMap((era) => {
     label: era.label,
     variant: "Russian",
     glyphs: nativeGlyphs,
-    levels: nativeLevels,
+    levels: native.ids,
+    weights: native.weights,
     foreign: [],
   };
   if (!era.foreign) return [russian];
 
   const foreignGlyphs = glyphsOf(era.foreign.groups);
-  const foreignLevels = decodeLevels(era.foreign.levels, [], foreignGlyphs.map((glyph) => glyph.id));
+  const foreign = decodeLevels(
+    era.foreign.levels,
+    [],
+    foreignGlyphs.map((glyph) => glyph.id),
+    "",
+    era.foreign.weights,
+  );
   return [russian, {
     ...shared,
     id: era.foreign.id,
@@ -141,8 +185,20 @@ export const presets: Preset[] = presetEras.flatMap((era) => {
     variant: era.foreign.label,
     glyphs: [...nativeGlyphs, ...foreignGlyphs],
     // Russian first, so every level's reference stays the Russian one.
-    levels: nativeLevels.map((level, index) => [...level, ...foreignLevels[index]]),
-    foreign: foreignLevels.flat(),
+    levels: native.ids.map((level, index) => [...level, ...foreign.ids[index]]),
+    // Foreign letterforms are rarer than Russian ones — most Ottoman words and
+    // kanji occur once — so weighed by letterform they would outweigh the
+    // Russian marks they are an accent in. They are scaled down to the same
+    // 30% of a level's weight that they are held to in number.
+    weights: native.weights.map((own, index) => {
+      const theirs = foreign.weights[index];
+      const ownTotal = own.reduce((sum, weight) => sum + weight, 0);
+      const theirTotal = theirs.reduce((sum, weight) => sum + weight, 0);
+      const room = (ownTotal * foreignShare) / (1 - foreignShare);
+      const scale = theirTotal > room ? room / theirTotal : 1;
+      return [...own, ...theirs.map((weight) => weight * scale)];
+    }),
+    foreign: foreign.ids.flat(),
   }];
 });
 
@@ -211,6 +267,19 @@ export function levelLabel(id: string) {
 export function bandGlyphs(band: Band): readonly string[] {
   if (band.glyphs.length === 1) return levelMarks(band.glyphs[0]) ?? band.glyphs;
   return band.glyphs.flatMap((id) => levelMarks(id) ?? [id]);
+}
+
+/**
+ * How likely each mark of `bandGlyphs(band)` is to be picked, in the same
+ * order — or undefined for a band of the project's own marks, which are all
+ * equally likely. A mark of the project's own in a band beside a preset level
+ * weighs 1, as much as a whole letterform of the level.
+ */
+export function bandWeights(band: Band): readonly number[] | undefined {
+  const tokens = band.glyphs.map(readToken);
+  if (!tokens.some(Boolean)) return undefined;
+  if (band.glyphs.length === 1) return tokens[0]!.preset.weights[tokens[0]!.level];
+  return tokens.flatMap((token) => (token ? token.preset.weights[token.level] : [1]));
 }
 
 /**
