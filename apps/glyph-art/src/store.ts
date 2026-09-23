@@ -9,6 +9,7 @@ import {
   maxBands,
   minBands,
   type Band,
+  type GridAnimation,
   type GlyphSpec,
   type Settings,
 } from "./types";
@@ -72,6 +73,7 @@ type GlobalKey =
   | "stillFrames"
   | "outputWidth"
   | "hold"
+  | "animation"
   | "levels";
 
 type GlyphArtStore = {
@@ -84,6 +86,7 @@ type GlyphArtStore = {
 
   selectBand: (index: number) => void;
   setGlobal: <Key extends GlobalKey>(key: Key, value: Settings[Key], editKey?: string) => void;
+  enableGridAnimation: (animation: GridAnimation, minimumFrames: number) => void;
   setBandCount: (count: number) => void;
   setBandGlyphs: (index: number, glyphs: string[]) => void;
   setBandSize: (index: number, size: number | null) => void;
@@ -138,6 +141,11 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
     setGlobal: (key, value, editKey) => edit((settings) => {
       settings[key] = value;
     }, editKey ?? `global.${key}`),
+
+    enableGridAnimation: (animation, minimumFrames) => edit((settings) => {
+      settings.animation = animation;
+      settings.stillFrames = Math.max(settings.stillFrames, Math.round(minimumFrames));
+    }),
 
     setBandCount: (count) => edit((settings) => {
       const clamped = Math.max(minBands, Math.min(maxBands, Math.round(count)));

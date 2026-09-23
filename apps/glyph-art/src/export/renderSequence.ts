@@ -16,6 +16,7 @@ import { HalftoneRenderer } from "../engine/halftone";
 import { GlyphLibrary } from "../engine/glyphLibrary";
 import { solveRamp } from "../engine/ramp";
 import { gridSize, pitchAspect, sampleSource, type ToneField } from "../engine/tone";
+import { referenceGrid, settingsAtFrame } from "../animation";
 import {
   halftoneSize,
   maxExportFrames,
@@ -60,7 +61,7 @@ export function sequenceSize(source: ExportSource, settings: Settings) {
     const frame = halftoneSize(settings.outputWidth, source.width, source.height);
     return { gridW, gridH, cell: 0, width: frame.width, height: frame.height };
   }
-  const { gridW, gridH } = gridSize(settings.grid, source.width, source.height, settings.spacing);
+  const { gridW, gridH } = gridSize(referenceGrid(settings), source.width, source.height, settings.spacing);
   const { cell, width, height } = outputSize(settings, { gridW, gridH });
   return { gridW, gridH, cell, width, height };
 }
@@ -111,8 +112,6 @@ export type RenderedFrame = {
 export async function* renderSequence(options: SequenceOptions): AsyncGenerator<RenderedFrame> {
   const { source, settings, ink, library, signal, plate } = options;
   const total = frameCount(source, settings);
-  const { gridW, gridH } = sequenceSize(source, settings);
-
   const frame = sequenceSize(source, settings);
   const canvas = document.createElement("canvas");
   const scratch = document.createElement("canvas");
@@ -121,22 +120,39 @@ export async function* renderSequence(options: SequenceOptions): AsyncGenerator<
   // The ramp depends only on the settings, so it is solved once for the run.
   const ramp = halftoning ? [] : solveRamp(settings, library.metrics);
   const cellAspect = halftoning ? 1 : pitchAspect(settings.spacing);
-
-  let field: ToneField | null = source.kind === "image"
-    ? sampleSource(source.bitmap, source.width, source.height, gridW, gridH, scratch, cellAspect)
-    : null;
+  let field: ToneField | null = null;
+  let sampledGrid = "";
 
   for (let index = 0; index < total; index += 1) {
     if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
 
+    const frameSettings = settingsAtFrame(settings, index, total);
+    const { gridW, gridH } = frameSettings.mode === "halftone"
+      ? halftoneField(frameSettings, source.width, source.height)
+      : gridSize(frameSettings.grid, source.width, source.height, frameSettings.spacing);
+
     if (source.kind === "video") {
       await seek(source.video, Math.min(source.duration, index / settings.targetFps));
       field = sampleSource(source.video, source.width, source.height, gridW, gridH, scratch, cellAspect);
+    } else if (sampledGrid !== `${gridW}x${gridH}`) {
+      field = sampleSource(source.bitmap, source.width, source.height, gridW, gridH, scratch, cellAspect);
+      sampledGrid = `${gridW}x${gridH}`;
     }
     if (!field) throw new Error("The source could not be sampled onto the grid.");
 
-    if (renderer instanceof HalftoneRenderer) renderer.render({ settings, field, ink, plate, frame });
-    else renderer.render({ settings, field, library, frame: index, ink, ramp });
+    if (renderer instanceof HalftoneRenderer) {
+      renderer.render({ settings: frameSettings, field, ink, plate, frame });
+    } else {
+      renderer.render({
+        settings: frameSettings,
+        field,
+        library,
+        frame: index,
+        ink,
+        ramp,
+        size: frame,
+      });
+    }
     yield { canvas, index, total };
   }
 }

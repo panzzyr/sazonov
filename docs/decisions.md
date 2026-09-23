@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-09-24 — glyph art animates grid density on a normalized timeline
+
+- **Decision:** Store grid keyframes at positions from 0 to 1, interpolate them per frame, and establish one fixed export frame from the densest keyframe.
+- **Alternatives:** Store absolute frame numbers; resize the canvas with every keyframe; export each keyframe as a separate still.
+- **Reason:** Normalized positions survive frame-rate and clip-length changes, while a fixed raster is required by H.264 and keeps preview, PNG and MP4 geometrically identical.
+- **Consequences:** PNG and MP4 render the full keyframed sequence; SVG remains an editable still of the current playhead frame, and old projects load with animation disabled.
+
 ## 2026-09-15 — glyph art picks by letterform, and keeps soft marks out of the shadows
 
 - **Decision:** Each level's marks are grouped by letterform — leader

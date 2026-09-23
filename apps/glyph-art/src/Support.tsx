@@ -67,6 +67,12 @@ export function Support() {
             measured ink density. That is why a dot and a solid square can sit on the
             same ramp without one of them reading two bands too dark.
           </p>
+          <p>
+            The grid can be animated from one to {maxGrid} cells across. Switch on
+            <em> animate cells</em>, place the playhead, add keyframes, and choose a
+            linear, eased or stepped transition. Keyframes are stored as percentages
+            of the clip, so changing its length or frame rate does not move the motion.
+          </p>
         </section>
 
         <section>
@@ -124,6 +130,11 @@ export function Support() {
             mark — including type and bitmap scans — is traced into an outline from the
             measured mask used by the preview. Antialiased fringes become a hard contour;
             PNG remains the exact raster reference.
+          </p>
+          <p>
+            Grid animation is written through the same frame renderer as the preview.
+            PNG and MP4 contain the full timeline; SVG deliberately remains a still
+            export of the frame under the playhead.
           </p>
           <p>
             The file is plain filled paths, with no shared definitions to resolve, so it

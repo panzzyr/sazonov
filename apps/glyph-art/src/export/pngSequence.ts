@@ -91,6 +91,14 @@ export async function exportPngSequence(options: PngExportOptions) {
     ]
     : [
       `grid: ${settings.grid} cells across`,
+      ...(settings.animation.enabled
+        ? [
+          `grid animation: ${settings.animation.interpolation}`,
+          `keyframes: ${settings.animation.keyframes
+            .map((keyframe) => `${Math.round(keyframe.at * 100)}%=${keyframe.grid}`)
+            .join(", ")}`,
+        ]
+        : []),
       `bands: ${settings.bands.length}`,
       `seed: ${settings.seed}`,
     ];

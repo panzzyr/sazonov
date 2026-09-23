@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToolShell } from "./shared/Shell";
 import { RampEditor } from "./components/RampEditor";
 import { RangeControl, SliderControl } from "./components/RangeControl";
+import { GridAnimation } from "./components/GridAnimation";
 import { GlyphLibrary, readFileAsDataUrl } from "./engine/glyphLibrary";
 import { GlyphRenderer } from "./engine/render";
 import { HalftoneRenderer } from "./engine/halftone";
 import { solveRamp } from "./engine/ramp";
 import { loopLength } from "./engine/cellParams";
+import { settingsAtFrame } from "./animation";
 import { autoLevels, gridSize, pitchAspect, sampleSource, type ToneField } from "./engine/tone";
 import { exportPngSequence } from "./export/pngSequence";
 import { canEncodeMp4, exportMp4 } from "./export/mp4";
@@ -124,6 +126,7 @@ export function App() {
   const selectedBand = useGlyphArtStore((state) => state.selectedBand);
   const selectBand = useGlyphArtStore((state) => state.selectBand);
   const setGlobal = useGlyphArtStore((state) => state.setGlobal);
+  const enableGridAnimationInStore = useGlyphArtStore((state) => state.enableGridAnimation);
   const setBandCount = useGlyphArtStore((state) => state.setBandCount);
   const usePreset = useGlyphArtStore((state) => state.usePreset);
   const fitRamp = useGlyphArtStore((state) => state.fitRamp);
@@ -225,9 +228,25 @@ export function App() {
   }, [media]);
 
   const totalFrames = exportSource ? frameCount(exportSource, settings) : 1;
+  const renderSettings = useMemo(
+    () => settingsAtFrame(settings, frame, totalFrames),
+    [frame, settings, totalFrames],
+  );
+  const previewGrid = useMemo(() => {
+    if (!media) return null;
+    return renderSettings.mode === "halftone"
+      ? halftoneField(renderSettings, media.width, media.height)
+      : gridSize(renderSettings.grid, media.width, media.height, renderSettings.spacing);
+  }, [media, renderSettings]);
   const raster = exportSource ? sequenceSize(exportSource, settings) : null;
   const frameWidth = raster?.width ?? 0;
   const frameHeight = raster?.height ?? 0;
+  const fieldReady = Boolean(
+    field
+    && previewGrid
+    && field.gridW === previewGrid.gridW
+    && field.gridH === previewGrid.gridH,
+  );
 
   // Restore a shared link first, then whatever was last open on this machine.
   useEffect(() => {
@@ -244,7 +263,7 @@ export function App() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, settings }));
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, settings }));
       } catch {
         // Quota or private browsing; the session still works unsaved.
       }
@@ -264,15 +283,13 @@ export function App() {
     // A halftone dot reads the picture at its own centre, so the field it reads
     // is not the screen and has nothing to do with the ruling; the glyph path's
     // field *is* the cell grid. One sampling step, two very different grids.
-    const halftoning = settings.mode === "halftone";
-    const { gridW, gridH } = halftoning
-      ? halftoneField(settings, media.width, media.height)
-      : gridSize(settings.grid, media.width, media.height, settings.spacing);
-    const cellAspect = halftoning ? 1 : pitchAspect(settings.spacing);
+    const halftoning = renderSettings.mode === "halftone";
+    const { gridW, gridH } = previewGrid!;
+    const cellAspect = halftoning ? 1 : pitchAspect(renderSettings.spacing);
 
     const run = async () => {
       if (media.kind === "video") {
-        await seekTo(media.video, Math.min(media.duration, videoFrame / settings.targetFps));
+        await seekTo(media.video, Math.min(media.duration, videoFrame / renderSettings.targetFps));
         if (cancelled) return;
       }
       const source = media.kind === "video" ? media.video : media.bitmap;
@@ -283,7 +300,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [media, settings.mode, settings.grid, settings.spacing, settings.outputWidth, settings.targetFps, videoFrame]);
+  }, [media, previewGrid, renderSettings, videoFrame]);
 
   // Auto-levels, once per source. A flat photo quantized into seven bands uses
   // four of them and looks dead; per-frame levels on a video would pump.
@@ -302,13 +319,13 @@ export function App() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !field) return;
+    if (!canvas || !field || !fieldReady) return;
     try {
-      if (settings.mode === "halftone") {
+      if (renderSettings.mode === "halftone") {
         if (frameWidth === 0) return;
         if (!halftoneRef.current) halftoneRef.current = new HalftoneRenderer(canvas);
         halftoneRef.current.render({
-          settings,
+          settings: renderSettings,
           field,
           ink: "flat",
           frame: { width: frameWidth, height: frameHeight },
@@ -316,14 +333,22 @@ export function App() {
         return;
       }
       if (!rendererRef.current) rendererRef.current = new GlyphRenderer(canvas);
-      rendererRef.current.render({ settings, field, library, frame, ink: "flat", ramp });
+      rendererRef.current.render({
+        settings: renderSettings,
+        field,
+        library,
+        frame,
+        ink: "flat",
+        ramp,
+        size: { width: frameWidth, height: frameHeight },
+      });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "This frame could not be drawn.");
     }
     // `raster` is a fresh object every render, so the frame enters as two
     // numbers; depending on the object would redraw the screen on every
     // keystroke anywhere in the interface.
-  }, [field, settings, frame, frameWidth, frameHeight, library, libraryVersion, ramp]);
+  }, [field, fieldReady, renderSettings, frame, frameWidth, frameHeight, library, libraryVersion, ramp]);
 
   useEffect(() => {
     if (frame < totalFrames) return;
@@ -467,9 +492,9 @@ export function App() {
 
     try {
       if (format === "svg") {
-        if (!field || frameWidth === 0) throw new Error("The current frame is not ready yet.");
+        if (!field || !fieldReady || frameWidth === 0) throw new Error("The current frame is not ready yet.");
         const blob = exportSvg(
-          { settings, field, library, frame, ramp, size: { width: frameWidth, height: frameHeight } },
+          { settings: renderSettings, field, library, frame, ramp, size: { width: frameWidth, height: frameHeight } },
           `${stem} — glyph art`,
         );
         setBusy({ label, done: 1, total: 1 });
@@ -504,7 +529,7 @@ export function App() {
       abortRef.current = null;
       setBusy(null);
     }
-  }, [exportSource, field, format, frame, frameWidth, frameHeight, inks, library, media?.name, ramp, separationPlates, settings, totalFrames]);
+  }, [exportSource, field, fieldReady, format, frame, frameWidth, frameHeight, inks, library, media?.name, ramp, renderSettings, separationPlates, settings, totalFrames]);
 
   const copyShareLink = useCallback(() => {
     window.location.hash = `p=${encodeSettings(settings)}`;
@@ -514,7 +539,7 @@ export function App() {
   }, [settings]);
 
   const saveProject = useCallback(() => {
-    const blob = new Blob([JSON.stringify({ version: 1, settings }, null, 2)], {
+    const blob = new Blob([JSON.stringify({ version: 2, settings }, null, 2)], {
       type: "application/json",
     });
     downloadBlob(blob, "glyph-art-project.json");
@@ -566,7 +591,9 @@ export function App() {
     };
   }, [redo, totalFrames, undo]);
 
-  const cell = raster?.cell ?? 0;
+  const cell = field && frameWidth > 0
+    ? frameWidth / field.gridW / (1 + renderSettings.spacing.x)
+    : 0;
   const poolLengths = settings.bands.map((band) => bandGlyphs(band).length);
   const seamless = loopLength(poolLengths, settings.hold);
   const cycling = poolLengths.some((length) => length > 1);
@@ -589,6 +616,20 @@ export function App() {
     key: Key,
     value: HalftoneSettings[Key],
   ) => setGlobal("halftone", { ...halftone, [key]: value }, `halftone.${String(key)}`);
+
+  const enableGridAnimation = () => {
+    enableGridAnimationInStore({
+      enabled: true,
+      interpolation: settings.animation.interpolation,
+      keyframes: settings.animation.keyframes.length > 0
+        ? settings.animation.keyframes
+        : [
+          { at: 0, grid: settings.grid },
+          { at: 0.5, grid: minGrid },
+          { at: 1, grid: settings.grid },
+        ],
+    }, settings.targetFps * 4);
+  };
 
   return (
     <ToolShell name="glyph art">
@@ -682,7 +723,7 @@ export function App() {
           <section className="panel-block">
             <h2><Icon name="grid" />grid</h2>
             <SliderControl
-              label="cells"
+              label={settings.animation.enabled ? "base cells" : "cells"}
               value={settings.grid}
               min={minGrid}
               max={maxGrid}
@@ -717,9 +758,25 @@ export function App() {
               cell: each mark keeps the size cells gives it, and the grid holds fewer of them.
               hand adds seeded rotation, offset and size jitter per cell — the same every
               frame, so the surface loosens without boiling.
-              {cell < 8 && " At this many cells the marks are smaller than 8px and stop reading as marks."}
+              {raster && cell < 8 && " At this many cells the marks are smaller than 8px and stop reading as marks."}
+              {settings.animation.enabled && " The base value returns when animation is switched off."}
             </p>
           </section>
+          )}
+
+          {!halftoning && (
+            <GridAnimation
+              animation={settings.animation}
+              baseGrid={settings.grid}
+              frame={frame}
+              totalFrames={totalFrames}
+              onFrameChange={(next) => {
+                setPlaying(false);
+                setFrame(next);
+              }}
+              onChange={(animation, editKey) => setGlobal("animation", animation, editKey)}
+              onEnable={enableGridAnimation}
+            />
           )}
 
           <section className="panel-block">

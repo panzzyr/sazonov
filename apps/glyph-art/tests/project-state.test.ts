@@ -49,6 +49,28 @@ describe("parsing an untrusted project", () => {
     expect(parseSettings({ outputWidth: 1 }).outputWidth).toBe(minOutputWidth);
   });
 
+  it("validates and sorts grid animation keyframes", () => {
+    const settings = parseSettings({
+      animation: {
+        enabled: true,
+        interpolation: "linear",
+        keyframes: [
+          { at: 1, grid: 999 },
+          { at: -1, grid: 0 },
+          { at: 0.5, grid: 40 },
+        ],
+      },
+    });
+    expect(settings.animation.enabled).toBe(true);
+    expect(settings.animation.interpolation).toBe("linear");
+    expect(settings.animation.keyframes).toEqual([
+      { at: 0, grid: minGrid },
+      { at: 0.5, grid: 40 },
+      { at: 1, grid: maxGrid },
+    ]);
+    expect(settings.stillFrames).toBe(settings.targetFps * 4);
+  });
+
   it("migrates the old halftone frame width into the common output setting", () => {
     expect(parseSettings({ halftone: { width: 1536 } }).outputWidth).toBe(1536);
   });
@@ -128,11 +150,17 @@ describe("share links", () => {
     settings.weight = 1.1;
     settings.outputWidth = 3072;
     settings.rampInvert = true;
+    settings.animation = {
+      enabled: true,
+      interpolation: "ease-in-out",
+      keyframes: [{ at: 0, grid: 96 }, { at: 1, grid: 1 }],
+    };
     const restored = decodeSettings(encodeSettings(settings));
     expect(restored.grid).toBe(96);
     expect(restored.weight).toBeCloseTo(1.1);
     expect(restored.outputWidth).toBe(3072);
     expect(restored.rampInvert).toBe(true);
+    expect(restored.animation).toEqual(settings.animation);
   });
 
   it("leaves uploaded marks out and substitutes a shipped one", () => {

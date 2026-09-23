@@ -117,6 +117,21 @@ export type HalftoneSettings = {
 
 export type Spacing = { x: number; y: number };
 
+export type GridInterpolation = "linear" | "ease-in-out" | "hold";
+
+export type GridKeyframe = {
+  /** Position in the clip, from the first frame (0) to the last (1). */
+  at: number;
+  /** Cells across before spacing is applied. */
+  grid: number;
+};
+
+export type GridAnimation = {
+  enabled: boolean;
+  interpolation: GridInterpolation;
+  keyframes: GridKeyframe[];
+};
+
 export type Settings = {
   mode: Mode;
   seed: number;
@@ -173,6 +188,8 @@ export type Settings = {
   outputWidth: number;
   /** Frames each mark of a cycling band is held for, 1..24. */
   hold: number;
+  /** Optional timeline for the grid density. Static SVG still uses one frame. */
+  animation: GridAnimation;
   /** Marks available to the bands, including anything the user added. */
   glyphs: GlyphSpec[];
   halftone: HalftoneSettings;
@@ -190,8 +207,9 @@ export type ExportFormat = "png" | "mp4" | "svg";
 
 export type MediaKind = "video" | "image";
 
-export const minGrid = 8;
+export const minGrid = 1;
 export const maxGrid = 240;
+export const maxGridKeyframes = 24;
 /** A gap of two cells is already a scatter of marks; past it there is no picture. */
 export const maxSpacing = 2;
 export const minLines = 8;
@@ -279,6 +297,11 @@ export const defaultSettings: Settings = {
   stillFrames: 1,
   outputWidth: 2048,
   hold: 2,
+  animation: {
+    enabled: false,
+    interpolation: "ease-in-out",
+    keyframes: [],
+  },
   glyphs: [],
   halftone: {
     // 60 lines across a 2048 frame is a 34-pixel dot: coarse enough to read as

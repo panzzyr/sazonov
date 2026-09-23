@@ -198,7 +198,7 @@ function svgDocument(size: Frame, title: string, description: string, body: stri
 function glyphBody(options: SvgOptions) {
   const { settings, field, library, size } = options;
   const ramp = options.ramp ?? solveRamp(settings, library.metrics);
-  const geometry = cellGeometry(settings, size.width, field.gridW);
+  const geometry = cellGeometry(settings, size.width, field.gridW, size.height, field.gridH);
   const paper = settings.invert ? "#000000" : "#ffffff";
   const cache = new Map<string, Outline>();
   const inks = new Map<string, string[]>();

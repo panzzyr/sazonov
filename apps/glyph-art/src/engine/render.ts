@@ -29,12 +29,27 @@ import { minMarkSize, outputFrameSize, type ExportInk, type Settings } from "../
  * `pitchX` and `pitchY` are the distance from one mark to the next, which is
  * the cell plus its spacing. With no spacing all three are equal.
  */
-export type CellGeometry = { cell: number; pitchX: number; pitchY: number };
+export type CellGeometry = {
+  cell: number;
+  pitchX: number;
+  pitchY: number;
+  offsetY: number;
+};
 
-export function cellGeometry(settings: Settings, frameWidth: number, gridW: number): CellGeometry {
+export function cellGeometry(
+  settings: Settings,
+  frameWidth: number,
+  gridW: number,
+  frameHeight?: number,
+  gridH?: number,
+): CellGeometry {
   const pitchX = frameWidth / gridW;
   const cell = pitchX / (1 + settings.spacing.x);
-  return { cell, pitchX, pitchY: cell * (1 + settings.spacing.y) };
+  const pitchY = cell * (1 + settings.spacing.y);
+  const offsetY = frameHeight !== undefined && gridH !== undefined
+    ? (frameHeight - pitchY * gridH) / 2
+    : 0;
+  return { cell, pitchX, pitchY, offsetY };
 }
 
 export function outputSize(settings: Settings, field: Pick<ToneField, "gridW" | "gridH">) {
@@ -42,7 +57,7 @@ export function outputSize(settings: Settings, field: Pick<ToneField, "gridW" | 
     settings.outputWidth,
     (field.gridW / field.gridH) * pitchAspect(settings.spacing),
   );
-  return { ...frame, ...cellGeometry(settings, frame.width, field.gridW) };
+  return { ...frame, ...cellGeometry(settings, frame.width, field.gridW, frame.height, field.gridH) };
 }
 
 export type RenderOptions = {
@@ -53,6 +68,8 @@ export type RenderOptions = {
   ink: ExportInk;
   /** Pre-solved ramp, so a sequence does not re-solve it every frame. */
   ramp?: SolvedBand[];
+  /** Fixed sequence frame. Needed when an animated grid changes its geometry. */
+  size?: { width: number; height: number };
 };
 
 export type GlyphPlacement = {
@@ -69,7 +86,7 @@ export type GlyphPlacement = {
 export function* glyphPlacements(
   { settings, field, library, frame }: RenderOptions,
   ramp: SolvedBand[],
-  { cell, pitchX, pitchY }: CellGeometry,
+  { cell, pitchX, pitchY, offsetY }: CellGeometry,
 ): Generator<GlyphPlacement> {
   const bandCount = settings.bands.length;
   // Expanded once per frame rather than per cell: a preset level is one
@@ -111,7 +128,7 @@ export function* glyphPlacements(
         glyph: chosen,
         cellIndex,
         centreX: (x + 0.5) * pitchX + hand.offsetX * cell,
-        centreY: (y + 0.5) * pitchY + hand.offsetY * cell,
+        centreY: offsetY + (y + 0.5) * pitchY + hand.offsetY * cell,
         width: chosen.aspect >= 1 ? long : long * chosen.aspect,
         height: chosen.aspect >= 1 ? long / chosen.aspect : long,
         rotation: hand.rotation,
@@ -134,7 +151,17 @@ export class GlyphRenderer {
 
   render(options: RenderOptions) {
     const { settings, field, library, frame, ink } = options;
-    const { width, height, ...geometry } = outputSize(settings, field);
+    const natural = outputSize(settings, field);
+    const width = options.size?.width ?? natural.width;
+    const height = options.size?.height ?? natural.height;
+    const geometry = options.size
+      ? cellGeometry(settings, width, field.gridW, height, field.gridH)
+      : {
+        cell: natural.cell,
+        pitchX: natural.pitchX,
+        pitchY: natural.pitchY,
+        offsetY: natural.offsetY,
+      };
     const ramp = options.ramp ?? solveRamp(settings, library.metrics);
 
     if (this.canvas.width !== width || this.canvas.height !== height) {

@@ -32,6 +32,7 @@ import {
   maxFps,
   maxGain,
   maxGrid,
+  maxGridKeyframes,
   maxHold,
   maxLines,
   maxOutputWidth,
@@ -54,6 +55,7 @@ import {
   separations,
   type Band,
   type GlyphSpec,
+  type GridAnimation,
   type HalftoneSettings,
   type Range,
   type Settings,
@@ -159,6 +161,31 @@ function readSpacing(value: unknown): Spacing {
   };
 }
 
+function readAnimation(value: unknown): GridAnimation {
+  const fallback = defaultSettings.animation;
+  if (!isObject(value)) return structuredClone(fallback);
+  const interpolation = ["linear", "ease-in-out", "hold"].includes(String(value.interpolation))
+    ? value.interpolation as GridAnimation["interpolation"]
+    : fallback.interpolation;
+  const raw = Array.isArray(value.keyframes) ? value.keyframes : [];
+  const keyframes = raw
+    .slice(0, maxGridKeyframes)
+    .flatMap((entry) => {
+      if (!isObject(entry)) return [];
+      return [{
+        at: number(entry.at, 0, 0, 1),
+        grid: Math.round(number(entry.grid, defaultSettings.grid, minGrid, maxGrid)),
+      }];
+    })
+    .sort((a, b) => a.at - b.at)
+    .filter((entry, index, entries) => index === entries.length - 1 || entry.at !== entries[index + 1].at);
+  return {
+    enabled: typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
+    interpolation,
+    keyframes,
+  };
+}
+
 /** Six-digit hex only. Anything else is a string the CSS parser would guess at. */
 function readInk(value: unknown, fallback: string) {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
@@ -219,6 +246,10 @@ export function parseSettings(value: unknown): Settings {
     maxOutputWidth,
   ) / 2) * 2;
   settings.hold = Math.round(number(incoming.hold, defaultSettings.hold, minHold, maxHold));
+  settings.animation = readAnimation(incoming.animation);
+  if (settings.animation.enabled && settings.stillFrames < 2) {
+    settings.stillFrames = settings.targetFps * 4;
+  }
   settings.levels = readLevels(incoming.levels, defaultSettings.levels);
   settings.colorMode = incoming.colorMode === "source" ? "source" : "mono";
   settings.invert = typeof incoming.invert === "boolean" ? incoming.invert : defaultSettings.invert;
