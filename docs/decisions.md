@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-02 — reaction counters remain separate and reach the shadows
+
+- **Decision:** Remove combined eye/counter marks, carry all 180 standalone counters on every level, reserve the lightest three levels for counters, and assign counters 65% of the darkest levels. Use the owner's supplied press F SVG instead of the original simplified face.
+- **Alternatives:** Restrict counters to light tones; shrink silhouettes into every level; rasterize and retrace the replacement SVG.
+- **Reason:** The owner wants separate symbols, fewer tiny reactions, more numbers in the shadows and their exact press F drawing.
+- **Consequences:** Family weights explicitly control tone-dependent frequency. The supplied SVG's curves and polygon are converted to absolute paths using the existing build tooling; preview and SVG export share the same original contours. No modules are added, and saved era-level references continue to work.
+
 ## 2026-10-02 — glyph art blends historical steps spatially and preserves reaction vectors
 
 - **Decision:** Mix neighbouring era presets by seeded cell selection along an editable spatial axis. Keep one tone curve across all steps, with digital reactions last. Preserve the existing single-preset ramp separately.

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { gradientPosition, gradientStep } from "../src/spatialGradient";
 import { applyPreset, defaultGradientSteps, findPreset, historicalPresets, librarySpecs } from "../src/presets";
-import { reactionCounts, reactionsPreset } from "../src/reactions";
+import { reactionCounts, reactionIcons, reactionShares, reactionsPreset } from "../src/reactions";
+import { pressFVector } from "../src/generatedPressF";
+import { cumulativeWeights, weightedCycleIndex } from "../src/engine/cellParams";
+import { execFileSync } from "node:child_process";
 import { decodeSettings, encodeSettings, parseSettings } from "../src/projectState";
 import { initialSettings, useGlyphArtStore } from "../src/store";
 import { vectorContours } from "../src/engine/vector";
@@ -103,6 +106,9 @@ describe("digital reaction vectors", () => {
     for (const count of reactionCounts) expect(count).toMatch(/^(?:\d\d|\d,\d)k$/);
     expect(reactionsPreset.glyphs.slice(0, 3).map((glyph) => glyph.id))
       .toEqual(["reaction-fire", "reaction-salute", "reaction-eye"]);
+    expect(reactionsPreset.glyphs).toHaveLength(183);
+    expect(reactionsPreset.glyphs.some((glyph) => glyph.id.startsWith("reaction-views-"))).toBe(false);
+    expect(reactionsPreset.glyphs.filter((glyph) => glyph.label.startsWith("views"))).toHaveLength(1);
     const known = new Set(reactionsPreset.glyphs.map((glyph) => glyph.id));
     for (const [index, level] of reactionsPreset.levels.entries()) {
       expect(level.length).toBeGreaterThan(0);
@@ -110,6 +116,36 @@ describe("digital reaction vectors", () => {
       for (const id of level) expect(known.has(id)).toBe(true);
     }
     for (const glyph of reactionsPreset.glyphs) expect(vectorContours(glyph.vector!.path).length).toBeGreaterThan(0);
+  });
+
+  it("uses the owner's press F trace without rasterization or replacement geometry", () => {
+    expect(reactionIcons.salute).toBe(pressFVector);
+    expect([pressFVector.width, pressFVector.height]).toEqual([150.58, 137.54]);
+    expect(vectorContours(pressFVector.path)).toHaveLength(3);
+    const regenerated = execFileSync(process.execPath, ["../../scripts/build-press-f.mjs"], { encoding: "utf8" });
+    const json = regenerated.slice(regenerated.indexOf(" = ") + 3).trim().replace(/;$/, "");
+    expect(JSON.parse(json)).toEqual(pressFVector);
+  });
+
+  it("keeps tiny levels free of icons and prints counters on every level, including the darkest", () => {
+    for (const [band, level] of reactionsPreset.levels.entries()) {
+      const numeric = level.filter((id) => id.startsWith("reaction-count-"));
+      expect(numeric).toHaveLength(180);
+      if (band < 3) expect(level).toEqual(numeric);
+      const total = reactionsPreset.weights[band].reduce((sum, weight) => sum + weight, 0);
+      const numberWeight = level.reduce((sum, id, index) =>
+        sum + (id.startsWith("reaction-count-") ? reactionsPreset.weights[band][index] : 0), 0);
+      expect(total).toBeCloseTo(1);
+      expect(numberWeight / total).toBeCloseTo(reactionShares[band].counters);
+    }
+    const band = 11;
+    const pool = reactionsPreset.levels[band];
+    const weights = cumulativeWeights(reactionsPreset.weights[band]);
+    const picks = Array.from({ length: 4000 }, (_, cell) =>
+      pool[weightedCycleIndex(8471, cell, weights, 0, 2)]);
+    const fraction = picks.filter((id) => id.startsWith("reaction-count-")).length / picks.length;
+    expect(fraction).toBeGreaterThan(0.6);
+    expect(fraction).toBeLessThan(0.7);
   });
 
   it("converts quadratic font curves exactly and retains holes as distinct contours", () => {
@@ -125,7 +161,7 @@ describe("digital reaction vectors", () => {
     // Exercise the wide counters, including their holes, not only the icons.
     settings.bands = [
       { glyphs: [reactionsPreset.glyphs[10].id], size: 0.9 },
-      { glyphs: [reactionsPreset.glyphs[250].id], size: 0.9 },
+      { glyphs: [reactionsPreset.glyphs.find((glyph) => glyph.label === "1,7k")!.id], size: 0.9 },
     ];
     settings.glyphs = reactionsPreset.glyphs;
     const library = libraryFor(settings);

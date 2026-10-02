@@ -242,9 +242,12 @@ your custom ramp has not been overwritten. Picking a single preset also
 disables the gradient without discarding its order.
 
 The last step contains simplified monochrome fire and press F / salute marks,
-a views eye, and counters with or without the eye. Every counter has exactly two
-digits: `17k` and `1,7k`, never `17,1k`. There are 180 values. Wide counters live
-on the lighter levels; the darkest levels use icons to retain enough ink.
+a separate views eye, and standalone counters. The eye is never joined to a
+counter. Every counter has exactly two digits: `17k` and `1,7k`, never `17,1k`.
+There are 180 values on every level. The smallest three levels use counters
+only, avoiding tiny emoji silhouettes. Counters make up 65% of the darkest
+levels, with the remaining marks split between fire, the owner's press F trace
+and the separate eye.
 Counters use Roboto Medium contours; no installed font is needed. All these
 marks export as native SVG paths, without text, emoji, external fonts or embedded
 images. Historical scans continue to export as traced curves.

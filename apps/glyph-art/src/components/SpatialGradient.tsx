@@ -72,6 +72,8 @@ export function SpatialGradient() {
       <span>1,7k · 16k · 3,2k</span>
     </div>
     <p className="control-hint">Digital reactions: fire, press F / salute, views and 180 counters.
-      Always two digits: 1,7k or 17k, never 17,1k. Roboto Medium counters export as curves.</p>
+      The eye is a separate mark; tiny levels use counters only, and dark levels
+      keep counters in the majority. Always two digits: 1,7k or 17k, never 17,1k.
+      Roboto Medium counters and the original press F trace export as curves.</p>
   </section>;
 }
