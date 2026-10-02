@@ -73,6 +73,12 @@ export function Support() {
             linear, eased or stepped transition. Keyframes are stored as percentages
             of the clip, so changing its length or frame rate does not move the motion.
           </p>
+          <p>
+            Dense grids and screens cost more to render and make larger SVG files.
+            At {maxGrid} cells across, a 4096px frame gives each cell 8px; lower
+            resolutions make individual symbols harder to read. A screen pitch below
+            2px can alias in PNG or video, even though SVG retains vector dots.
+          </p>
         </section>
 
         <section>

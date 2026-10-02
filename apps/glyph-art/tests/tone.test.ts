@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { autoLevels, bandFor, gridSize, lightness, pitchAspect, reduceToCells } from "../src/engine/tone";
-import { sequenceSize } from "../src/export/renderSequence";
-import { defaultSettings } from "../src/types";
+import { halftoneField, sequenceSize } from "../src/export/renderSequence";
+import { defaultSettings, maxGrid, maxLines } from "../src/types";
 
 function checkerboard(width: number, height: number) {
   const pixels = new Uint8ClampedArray(width * height * 4);
@@ -157,5 +157,22 @@ describe("spacing", () => {
     expect(frame.width / frame.height).toBeCloseTo(1600 / 1200, 1);
     // A gap moves marks apart; it does not make them smaller.
     expect(frame.cell).toBeCloseTo(defaultSettings.outputWidth / defaultSettings.grid, 0);
+  });
+});
+
+describe("dense grids and screens", () => {
+  it("keeps 512 cells across and derives height normally", () => {
+    expect(gridSize(maxGrid, 1600, 1200)).toEqual({ gridW: 512, gridH: 384 });
+    const source = { kind: "image" as const, bitmap: {} as ImageBitmap, width: 1600, height: 1200 };
+    const frame = sequenceSize(source, { ...defaultSettings, grid: maxGrid, outputWidth: 4096 });
+    expect(frame.width).toBe(4096);
+    expect(frame.cell).toBe(8);
+  });
+
+  it("samples dense halftones finely even at a modest output width", () => {
+    const settings = { ...defaultSettings, mode: "halftone" as const, outputWidth: 1024,
+      halftone: { ...defaultSettings.halftone, lines: maxLines } };
+    expect(halftoneField(settings, 1600, 1200)).toEqual({ gridW: 1024, gridH: 768 });
+    expect(sequenceSize({ kind: "image", bitmap: {} as ImageBitmap, width: 1600, height: 1200 }, settings).width).toBe(1024);
   });
 });

@@ -223,12 +223,12 @@ export type ExportFormat = "png" | "mp4" | "svg";
 export type MediaKind = "video" | "image";
 
 export const minGrid = 1;
-export const maxGrid = 240;
+export const maxGrid = 512;
 export const maxGridKeyframes = 24;
 /** A gap of two cells is already a scatter of marks; past it there is no picture. */
 export const maxSpacing = 2;
 export const minLines = 8;
-export const maxLines = 200;
+export const maxLines = 512;
 export const minGain = 0.5;
 export const maxGain = 2;
 export const minSpread = 0.7;

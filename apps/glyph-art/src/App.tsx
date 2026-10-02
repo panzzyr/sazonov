@@ -991,6 +991,8 @@ export function App() {
                       + "pair reads as two inks rather than as one ink printed twice."
                     : "One screen. The angle is the only thing standing between it and the frame, "
                       + "which is why 45° is the default: a dot grid disappears there."}
+                {frameWidth > 0 && frameWidth / halftone.lines < 2
+                  && " The screen pitch is below 2px; raise frame width for cleaner raster dots. SVG keeps the vector screen."}
               </p>
             </section>
           )}

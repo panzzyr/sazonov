@@ -44,14 +44,15 @@ export function frameCount(source: ExportSource, settings: Settings) {
 /**
  * Cells the source is averaged into before a halftone screen reads it.
  *
- * Independent of the ruling on purpose. A dot samples the picture at its own
- * centre, so the field only has to be fine enough that the dots are reading an
- * image rather than a mosaic — roughly a quarter of the frame, which is finer
- * than any ruling the tool offers and cheap next to drawing the dots.
+ * A dot samples the picture at its own centre. Keep the usual quarter-frame
+ * field, but give a dense screen at least two samples per pitch so raising the
+ * ruling does not just oversample the old, coarser tone field. The 1024 cap
+ * bounds the intermediate allocation independently of export resolution.
  */
 export function halftoneField(settings: Settings, sourceWidth: number, sourceHeight: number) {
   const frame = halftoneSize(settings.outputWidth, sourceWidth, sourceHeight);
-  return gridSize(Math.min(640, Math.round(frame.width / 4)), sourceWidth, sourceHeight);
+  const across = Math.min(1024, Math.max(Math.round(frame.width / 4), settings.halftone.lines * 2));
+  return gridSize(across, sourceWidth, sourceHeight);
 }
 
 /** The raster every export path will produce, known before a frame is drawn. */

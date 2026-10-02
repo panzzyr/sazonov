@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-02 — glyph art supports denser grids and halftone screens
+
+- **Decision:** Raise cells and screen lines to 512 across, including animation, project validation and share links; adapt halftone source sampling up to 1024 columns.
+- **Alternatives:** Leave the UI ceilings at 240/200, or expose an unbounded count.
+- **Reason:** The owner wants denser images, while a finite ceiling keeps raster and editable SVG workloads manageable. Dense screens need a finer tone field to make the added lines useful.
+- **Consequences:** Defaults stay unchanged. Large grids render slower and grow SVG files; the interface warns about sub-8px marks and sub-2px raster screen pitches. No dependencies or tracing changes.
+
 ## 2026-10-02 — shuffle symbols independently and screen only the weakest scans
 
 - **Decision:** Store a separate symbol seed; shuffle from full tone pools without changing layout jitter or spatial-step identity, and randomize new source/preset choices.

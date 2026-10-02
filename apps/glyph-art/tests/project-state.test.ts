@@ -10,6 +10,7 @@ import { initialSettings, resampleBands, useGlyphArtStore } from "../src/store";
 import {
   maxBands,
   maxGrid,
+  maxLines,
   maxOutputWidth,
   maxSpacing,
   minBands,
@@ -82,6 +83,20 @@ describe("parsing an untrusted project", () => {
 
   it("keeps a valid levels pair", () => {
     expect(parseSettings({ levels: { min: 0.2, max: 0.8 } }).levels).toEqual({ min: 0.2, max: 0.8 });
+  });
+
+  it("keeps expanded cell and line counts in saved projects and links", () => {
+    const settings = parseSettings({
+      grid: 512,
+      halftone: { lines: 512 },
+      animation: { enabled: true, keyframes: [{ at: 0, grid: 512 }, { at: 1, grid: 1 }] },
+    });
+    expect(settings.grid).toBe(512);
+    expect(settings.halftone.lines).toBe(512);
+    expect(settings.animation.keyframes[0].grid).toBe(512);
+    expect(decodeSettings(encodeSettings(settings))).toEqual(settings);
+    expect(parseSettings({ grid: 99999, halftone: { lines: 99999 } }).grid).toBe(maxGrid);
+    expect(parseSettings({ halftone: { lines: 99999 } }).halftone.lines).toBe(maxLines);
   });
 
   it("drops band references to marks the project does not carry", () => {

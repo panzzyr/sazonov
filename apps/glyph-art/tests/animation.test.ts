@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { frameProgress, gridAtProgress, referenceGrid, settingsAtFrame } from "../src/animation";
-import { defaultSettings, type Settings } from "../src/types";
+import { defaultSettings, maxGrid, type Settings } from "../src/types";
 
 function animated(interpolation: Settings["animation"]["interpolation"] = "linear"): Settings {
   return {
@@ -52,5 +52,14 @@ describe("grid keyframes", () => {
 
   it("uses the densest keyframe to establish a stable export frame", () => {
     expect(referenceGrid(animated())).toBe(200);
+  });
+
+  it("animates the expanded maximum through intermediate grids without the old ceiling", () => {
+    const settings = animated();
+    settings.animation.keyframes = [{ at: 0, grid: maxGrid }, { at: 1, grid: 1 }];
+    expect(gridAtProgress(settings, 0)).toBe(512);
+    expect(gridAtProgress(settings, 0.5)).toBe(257);
+    expect(gridAtProgress(settings, 1)).toBe(1);
+    expect(referenceGrid(settings)).toBe(512);
   });
 });
