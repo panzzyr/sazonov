@@ -38,6 +38,7 @@ import {
   type PresetGroupData,
 } from "./generatedPresets";
 import { packShelves } from "./sheetPacking";
+import { rejectedScanIndices } from "./generatedPresetQuality";
 import { reactionsPreset } from "./reactions";
 import type { Band, GlyphSpec, Settings } from "./types";
 
@@ -101,6 +102,20 @@ function weightOf(weights: string, index: number) {
 
 type Decoded = { ids: string[][]; weights: number[][] };
 
+/** Keep identities and ramp references; only automatic picks exclude poor scans. */
+export const rejectedScanIds: ReadonlySet<string> = new Set(
+  Object.entries(rejectedScanIndices).flatMap(([group, indices]) =>
+    indices.map((index) => `preset-${group}-${index}`)),
+);
+
+function screenWeights(decoded: Decoded): Decoded {
+  return {
+    ids: decoded.ids,
+    weights: decoded.weights.map((weights, level) => weights.map((weight, index) =>
+      rejectedScanIds.has(decoded.ids[level][index]) ? 0 : weight)),
+  };
+}
+
 /**
  * An era's levels, as ids and weights: one character per mark naming its
  * level, or — for an era small enough to reuse marks — indices per level. The
@@ -150,14 +165,14 @@ const foreignShare = 0.3;
 
 export const historicalPresets: Preset[] = presetEras.flatMap((era) => {
   const nativeGlyphs = glyphsOf(era.native.groups);
-  const native = decodeLevels(
+  const native = screenWeights(decodeLevels(
     era.native.levels,
     era.native.references,
     nativeGlyphs.map((glyph) => glyph.id),
     era.native.extra,
     era.native.weights,
     era.native.extraWeights,
-  );
+  ));
   const shared = { era: era.label, peak: era.peak, maxSize: era.maxSize };
   const russian: Preset = {
     ...shared,
@@ -172,13 +187,13 @@ export const historicalPresets: Preset[] = presetEras.flatMap((era) => {
   if (!era.foreign) return [russian];
 
   const foreignGlyphs = glyphsOf(era.foreign.groups);
-  const foreign = decodeLevels(
+  const foreign = screenWeights(decodeLevels(
     era.foreign.levels,
     [],
     foreignGlyphs.map((glyph) => glyph.id),
     "",
     era.foreign.weights,
-  );
+  ));
   return [russian, {
     ...shared,
     id: era.foreign.id,

@@ -14,6 +14,7 @@ import {
   presetEraList,
   presetGlyphIds,
   presetLevels,
+  rejectedScanIds,
   historicalPresets as presets,
 } from "../src/presets";
 import { presetGroups, presetSizeAlphabet } from "../src/generatedPresets";
@@ -383,23 +384,30 @@ describe("weighting by letterform", () => {
   it.each(presets)("$label weighs every mark it prints", (preset) => {
     preset.levels.forEach((level, index) => {
       expect(preset.weights[index]).toHaveLength(level.length);
-      for (const weight of preset.weights[index]) {
-        expect(weight).toBeGreaterThan(0);
+      for (const [position, weight] of preset.weights[index].entries()) {
+        if (rejectedScanIds.has(level[position])) expect(weight).toBe(0);
+        else expect(weight).toBeGreaterThan(0);
         expect(weight).toBeLessThanOrEqual(1);
       }
     });
   });
 
-  it.each(russianPresets)("$label gives every letterform of a level the same total weight", (preset) => {
+  it.each(russianPresets)("$label keeps equal letterform weights except screened impressions", (preset) => {
     // A letterform of k impressions weighs 1/k each, so the marks weighing 1/k
     // come in whole groups of k.
     for (const weights of preset.weights) {
       const counts = new Map<number, number>();
       for (const weight of weights) {
+        if (weight === 0) continue;
         const group = Math.round(1 / weight);
+        expect(weight).toBeCloseTo(1 / group, 10);
         counts.set(group, (counts.get(group) ?? 0) + 1);
       }
-      for (const [group, count] of counts) if (group < 91) expect(count % group).toBe(0);
+      // A surviving impression retains its original 1/k weight. Removing a
+      // poor impression must not make the remaining ones more likely.
+      if (!weights.includes(0)) {
+        for (const [group, count] of counts) if (group < 91) expect(count % group).toBe(0);
+      }
     }
   });
 

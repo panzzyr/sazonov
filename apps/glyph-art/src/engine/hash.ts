@@ -16,3 +16,10 @@ export function hash32(seed: number, frame: number, layer: number, channel: numb
 export function randomFloat(seed: number, frame: number, layer: number, channel: number) {
   return hash32(seed, frame, layer, channel) / 0x1_0000_0000;
 }
+
+/** Randomness enters at an explicit edit, never inside the frame renderer. */
+export function freshSeed(previous: number) {
+  const value = globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
+  // Even an unlikely repeated draw must make the shuffle an actual edit.
+  return value === previous ? (previous + 1) >>> 0 : value;
+}

@@ -609,6 +609,7 @@ button.primary {
 
 .transport {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: .6rem;
 }
@@ -619,10 +620,12 @@ button.primary {
   font: var(--step--2)/1 var(--font-mono);
   letter-spacing: .06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .transport input[type="range"] {
   flex: 1;
+  min-width: 5rem;
 }
 
 .transport-readout {

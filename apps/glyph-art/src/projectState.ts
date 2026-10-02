@@ -242,6 +242,8 @@ export function parseSettings(value: unknown): Settings {
   const settings = initialSettings();
 
   settings.seed = number(incoming.seed, defaultSettings.seed, 0, 0xffff_ffff) >>> 0;
+  // Old projects used one seed for both layout and marks: preserve that choice.
+  settings.glyphSeed = number(incoming.glyphSeed, settings.seed, 0, 0xffff_ffff) >>> 0;
   settings.grid = Math.round(number(incoming.grid, defaultSettings.grid, minGrid, maxGrid));
   settings.spacing = readSpacing(incoming.spacing);
   settings.weight = number(incoming.weight, defaultSettings.weight, minWeight, maxWeight);

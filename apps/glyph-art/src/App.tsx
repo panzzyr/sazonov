@@ -137,6 +137,7 @@ export function App() {
   const rebalanceBands = useGlyphArtStore((state) => state.rebalanceBands);
   const replaceSettings = useGlyphArtStore((state) => state.replaceSettings);
   const reroll = useGlyphArtStore((state) => state.reroll);
+  const shuffleSymbols = useGlyphArtStore((state) => state.shuffleSymbols);
   const undo = useGlyphArtStore((state) => state.undo);
   const redo = useGlyphArtStore((state) => state.redo);
   const reset = useGlyphArtStore((state) => state.reset);
@@ -165,6 +166,8 @@ export function App() {
   const halftoneRef = useRef<HalftoneRenderer | null>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
   const libraryRef = useRef<GlyphLibrary | null>(null);
+  // Attaching media to a restored project must not silently reroll its artwork.
+  const preserveNextMediaSymbols = useRef(false);
   // The project's own marks plus the preset marks its bands name by reference.
   const specs = useMemo(
     () => librarySpecs(settings),
@@ -268,8 +271,13 @@ export function App() {
     try {
       const shared = new URLSearchParams(window.location.hash.slice(1)).get("p");
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (shared) replaceSettings(decodeSettings(shared));
-      else if (saved) replaceSettings(parseSettings(JSON.parse(saved)));
+      if (shared) {
+        replaceSettings(decodeSettings(shared));
+        preserveNextMediaSymbols.current = true;
+      } else if (saved) {
+        replaceSettings(parseSettings(JSON.parse(saved)));
+        preserveNextMediaSymbols.current = true;
+      }
     } catch {
       // A corrupt link or a project from a future version opens as defaults.
     }
@@ -402,6 +410,10 @@ export function App() {
     setFrame(0);
     setPreviewZoom(1);
     const url = URL.createObjectURL(file);
+    const chooseSymbols = () => {
+      if (!preserveNextMediaSymbols.current) shuffleSymbols();
+      preserveNextMediaSymbols.current = false;
+    };
     try {
       if (file.type.startsWith("video/")) {
         const video = document.createElement("video");
@@ -410,6 +422,7 @@ export function App() {
         video.playsInline = true;
         video.src = url;
         await metadata(video);
+        chooseSymbols();
         setMedia({
           kind: "video",
           name: file.name,
@@ -422,6 +435,7 @@ export function App() {
         return;
       }
       const bitmap = await createImageBitmap(file);
+      chooseSymbols();
       setMedia({
         kind: "image",
         name: file.name,
@@ -434,7 +448,7 @@ export function App() {
       URL.revokeObjectURL(url);
       setMessage(error instanceof Error ? error.message : "That file could not be opened.");
     }
-  }, []);
+  }, [shuffleSymbols]);
 
   const addMarkFiles = useCallback(async (files: FileList | File[], bandIndex?: number) => {
     try {
@@ -563,11 +577,12 @@ export function App() {
   const loadProject = useCallback(async (file: File) => {
     try {
       replaceSettings(parseSettings(JSON.parse(await file.text())));
+      preserveNextMediaSymbols.current = !media;
       setMessage(null);
     } catch {
       setMessage("That file is not a glyph art project.");
     }
-  }, [replaceSettings]);
+  }, [media, replaceSettings]);
 
   useEffect(() => {
     const editable = (target: EventTarget | null) =>
@@ -732,7 +747,8 @@ export function App() {
               ))}
               <p className="control-hint">
                 Each era is the type of its war, cut from newspapers, decrees and posters, and
-                every Russian mark of it prints — hundreds to a level, so a mark seldom repeats.
+                usable Russian marks print — hundreds to a level, so a mark seldom repeats.
+                Undersized and unusually soft scans are screened out of automatic picks.
                 The second preset of an era mixes in the foreign print of the same war, never
                 more than 30% of a level. An era loads its sheets, up to a few megabytes, when
                 you pick it. Only the marks change — the grid, the levels and the inversions
@@ -1058,6 +1074,16 @@ export function App() {
           </div>
 
           <div className="transport">
+            {!halftoning && (
+              <button
+                type="button"
+                disabled={!media || Boolean(busy) || Boolean(loadingMarks)}
+                onClick={shuffleSymbols}
+                title="Pick fresh symbols from each full tone pool; keep the grid, hand and step boundaries"
+              >
+                shuffle symbols
+              </button>
+            )}
             <button type="button" onClick={() => setPlaying((current) => !current)} disabled={totalFrames < 2}>
               {playing ? "pause" : "play"}
             </button>
@@ -1123,6 +1149,27 @@ export function App() {
                 />
                 <button type="button" onClick={reroll}>reroll</button>
               </div>
+            )}
+
+            {!halftoning && (
+              <>
+                <div className="field">
+                  <label htmlFor="glyph-seed">symbol seed</label>
+                  <input
+                    id="glyph-seed"
+                    type="number"
+                    min={0}
+                    max={0xffff_ffff}
+                    value={settings.glyphSeed}
+                    onChange={(event) => setGlobal("glyphSeed", Math.max(0, Number(event.target.value) >>> 0))}
+                  />
+                </div>
+                <p className="control-hint">
+                  Shuffle picks fresh symbols from the full pools, not just the marks already
+                  on screen. New sources and preset choices shuffle automatically; saved
+                  projects keep their choice. A band with one mark cannot change.
+                </p>
+              </>
             )}
 
             {!halftoning && (

@@ -147,6 +147,8 @@ export type SpatialGradient = {
 export type Settings = {
   mode: Mode;
   seed: number;
+  /** Symbol selection only; layout jitter and spatial-step boundaries use `seed`. */
+  glyphSeed: number;
   /**
    * Cells across the width. The output's aspect follows the source, so there
    * is no fit setting to get wrong: the grid height is derived, and the source
@@ -295,6 +297,7 @@ export const defaultBandCount = 7;
 export const defaultSettings: Settings = {
   mode: "glyph",
   seed: 8471,
+  glyphSeed: 8471,
   grid: 72,
   spacing: { x: 0, y: 0 },
   bands: [],

@@ -92,6 +92,21 @@ export function Support() {
             <em>hold</em> frames, with each cell out of phase with its neighbours.
           </p>
           <p>
+            <em>shuffle symbols</em> redraws each cell from its full tone pool, not from
+            the handful of symbols already visible. It keeps cell positions, hand jitter,
+            tone bands and spatial-step boundaries. Individual mark sizes still compensate
+            for their ink density. New sources and preset choices get a fresh symbol seed;
+            attaching media to a restored project keeps its saved choice. The symbol seed
+            is stored in projects and share links, and undo restores a previous shuffle.
+            Pools with only one mark cannot vary.
+          </p>
+          <p>
+            Historical pools are screened for undersized scans and unusually soft edges
+            within each scan source. Rejected impressions are not selected automatically;
+            their original ids and sheets remain available to explicit selections in old
+            projects. This is a conservative quality screen, not a redraw of the type.
+          </p>
+          <p>
             <em>max mark</em> is how far a mark may spill past its cell. Nothing is ever
             clipped — the marks are stamped into a full-frame mask — but past about 1.2
             they knit into a mass instead of staying countable. <em>fit ramp</em> then

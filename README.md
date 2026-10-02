@@ -51,6 +51,11 @@ as vector paths under Apache-2.0; attribution is in
 `apps/glyph-art/public/licenses/roboto.txt`. No font is loaded at runtime.
 See [the regeneration notes](docs/glyph-art-reactions.md).
 
+Glyph art can redraw symbols from full tone pools with **shuffle symbols**,
+independently of layout jitter and spatial-step boundaries. Projects and share
+links store the symbol seed. The historical catalogue has a conservative quality
+screen; see [the shuffle and scan-screening notes](docs/glyph-art-shuffle.md).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for editing guidance and
 [`docs/publishing/README.md`](docs/publishing/README.md) for GitHub,
 Cloudflare Pages, and DNS setup.

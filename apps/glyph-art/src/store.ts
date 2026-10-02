@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { defaultBandGlyphs, markSpecs } from "./engine/marks";
 import { fitPeak, rebalance, type DensityLookup } from "./engine/ramp";
+import { freshSeed } from "./engine/hash";
 import { applyPreset, defaultGradientSteps, findPreset, type Preset } from "./presets";
 import {
   defaultBandCount,
@@ -59,6 +60,7 @@ export function resampleBands(bands: Band[], count: number): Band[] {
 type GlobalKey =
   | "mode"
   | "seed"
+  | "glyphSeed"
   | "grid"
   | "spacing"
   | "weight"
@@ -99,6 +101,7 @@ type GlyphArtStore = {
   fitRamp: (lookup: DensityLookup) => void;
   replaceSettings: (settings: Settings) => void;
   reroll: () => void;
+  shuffleSymbols: () => void;
   undo: () => void;
   redo: () => void;
   reset: () => void;
@@ -131,7 +134,7 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
   }
 
   return {
-    settings: initialSettings(),
+    settings: { ...initialSettings(), glyphSeed: freshSeed(defaultSettings.glyphSeed) },
     selectedBand: 1,
     past: [],
     future: [],
@@ -141,6 +144,11 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
     selectBand: (selectedBand) => set({ selectedBand }),
 
     setGlobal: (key, value, editKey) => edit((settings) => {
+      if (key === "seed") settings.glyphSeed = value as number;
+      if (key === "gradient" && (value as Settings["gradient"]).steps.join("|")
+        !== settings.gradient.steps.join("|")) {
+        settings.glyphSeed = freshSeed(settings.glyphSeed);
+      }
       settings[key] = value;
     }, editKey ?? `global.${key}`),
 
@@ -212,6 +220,7 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
 
     usePreset: (preset) => edit((settings) => {
       applyPreset(settings, preset);
+      settings.glyphSeed = freshSeed(settings.glyphSeed);
     }),
 
     fitRamp: (lookup) => edit((settings) => {
@@ -225,6 +234,11 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
 
     reroll: () => edit((settings) => {
       settings.seed = (Math.imul(settings.seed, 1664525) + 1013904223) >>> 0;
+      settings.glyphSeed = settings.seed;
+    }),
+
+    shuffleSymbols: () => edit((settings) => {
+      settings.glyphSeed = freshSeed(settings.glyphSeed);
     }),
 
     undo: () => set((state) => {
@@ -250,7 +264,9 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
     }),
 
     reset: () => edit((settings) => {
-      Object.assign(settings, initialSettings(), { seed: settings.seed });
+      Object.assign(settings, initialSettings(), {
+        seed: settings.seed, glyphSeed: freshSeed(settings.glyphSeed),
+      });
     }),
   };
 });

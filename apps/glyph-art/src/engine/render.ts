@@ -126,8 +126,8 @@ export function* glyphPlacements(
       const chosen = pool.length === 1
         ? reference
         : library.get(pool[weighted
-          ? weightedCycleIndex(settings.seed, cellIndex, weighted, frame, settings.hold)
-          : cycleIndex(settings.seed, cellIndex, pool.length, frame, settings.hold)]);
+          ? weightedCycleIndex(settings.glyphSeed, cellIndex, weighted, frame, settings.hold)
+          : cycleIndex(settings.glyphSeed, cellIndex, pool.length, frame, settings.hold)]);
       if (!chosen || chosen.density <= 0) continue;
 
       const hand = handDraw(settings.seed, cellIndex, settings.hand);

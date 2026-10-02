@@ -106,6 +106,7 @@ export async function exportPngSequence(options: PngExportOptions) {
         "bands per step: 12",
       ] : [`bands: ${settings.bands.length}`]),
       `seed: ${settings.seed}`,
+      `symbol seed: ${settings.glyphSeed}`,
     ];
   const readme = [
     `${stem} — glyph art PNG sequence`,

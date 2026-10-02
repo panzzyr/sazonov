@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-02 — shuffle symbols independently and screen only the weakest scans
+
+- **Decision:** Store a separate symbol seed; shuffle from full tone pools without changing layout jitter or spatial-step identity, and randomize new source/preset choices.
+- **Alternatives:** Reroll the shared seed, permute only visible symbols, or draw entropy on every frame.
+- **Reason:** Expose unused impressions while keeping composition and all export formats reproducible; saved projects retain both seeds and legacy projects inherit their old seed.
+- **Consequences:** Every shuffle supports undo/redo; mark dimensions can vary through existing density compensation, and a singleton pool cannot change. Screen the complete measured catalogue for sub-16px edges and extreme within-source blur; zero selection weights preserve original assets and ids, foreign share limits and ramp references. No dependencies added.
+
 ## 2026-10-02 — reaction counters remain separate and reach the shadows
 
 - **Decision:** Remove combined eye/counter marks, carry all 180 standalone counters on every level, reserve the lightest three levels for counters, and assign counters 65% of the darkest levels. Use the owner's supplied press F SVG instead of the original simplified face.
