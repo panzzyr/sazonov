@@ -5,7 +5,8 @@
  *
  * A glyph frame is *traced*: its marks are bitmaps — scans, type, uploaded
  * files — measured into alpha masks, and the honest vector of a scan is its
- * contour. A halftone frame is not traced at all, because it was never a
+ * contour. Shipped reaction icons and counters retain their authored curves.
+ * A halftone frame is not traced at all, because it was never a
  * bitmap: the dots are solved from area as circles, ellipses and polygons, so
  * the SVG can carry the same geometry the canvas filled, exactly.
  *
@@ -33,6 +34,7 @@ import { cellGeometry, glyphPlacements, type RenderOptions } from "../engine/ren
 import { solveRamp } from "../engine/ramp";
 import { fitContour, traceContours, type Point, type Segment } from "./trace";
 import { drawGlyph, type MeasuredGlyph } from "../engine/glyphLibrary";
+import { mapContours, vectorContours } from "../engine/vector";
 
 /**
  * How far an outline may stray from the mask, as a share of the mark's size.
@@ -115,6 +117,28 @@ function xml(value: string) {
  */
 function markOutline(glyph: MeasuredGlyph, printedWidth: number, cache: Map<string, Outline>) {
   const { box } = glyph;
+  if (glyph.spec.vector) {
+    const id = `${glyph.spec.id}:vector`;
+    const hit = cache.get(id);
+    if (hit) return hit;
+    const vector = glyph.spec.vector;
+    const transform = glyph.vectorTransform ?? {
+      scaleX: glyph.bitmap.width / vector.width, scaleY: glyph.bitmap.height / vector.height,
+      offsetX: -box.x, offsetY: -box.y,
+    };
+    const outline: Outline = {
+      width: box.width,
+      height: box.height,
+      // The measured bitmap's tight box is what the preview fits. Use that
+      // same coordinate frame for the original curves, with no raster trace.
+      contours: mapContours(vectorContours(vector.path), ([x, y]) => [
+        x * transform.scaleX + transform.offsetX,
+        y * transform.scaleY + transform.offsetY,
+      ]),
+    };
+    cache.set(id, outline);
+    return outline;
+  }
   const wanted = Math.max(minTraceWidth, Math.round((printedWidth * traceDetail) / 8) * 8);
   const traceWidth = Math.min(box.width, wanted);
   const id = `${glyph.spec.id}:${traceWidth}`;

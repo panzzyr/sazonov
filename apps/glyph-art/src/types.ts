@@ -55,6 +55,8 @@ export type GlyphSpec = {
    * Like `source`, it is taken from the build, never from a project file.
    */
   rect?: [number, number, number, number];
+  /** Trusted shipped outlines. SVG exports keep these curves without tracing. */
+  vector?: { width: number; height: number; path: string };
 };
 
 export type Band = {
@@ -132,6 +134,16 @@ export type GridAnimation = {
   keyframes: GridKeyframe[];
 };
 
+export const gradientDirections = ["down", "up", "right", "left"] as const;
+export type SpatialGradient = {
+  enabled: boolean;
+  direction: (typeof gradientDirections)[number];
+  /** Fraction of each step interval spent mixing with its neighbour, 0..1. */
+  blend: number;
+  /** Ordered shipped preset ids. Repeated steps are supported. */
+  steps: string[];
+};
+
 export type Settings = {
   mode: Mode;
   seed: number;
@@ -190,6 +202,7 @@ export type Settings = {
   hold: number;
   /** Optional timeline for the grid density. Static SVG still uses one frame. */
   animation: GridAnimation;
+  gradient: SpatialGradient;
   /** Marks available to the bands, including anything the user added. */
   glyphs: GlyphSpec[];
   halftone: HalftoneSettings;
@@ -302,6 +315,7 @@ export const defaultSettings: Settings = {
     interpolation: "ease-in-out",
     keyframes: [],
   },
+  gradient: { enabled: false, direction: "down", blend: 0.65, steps: [] },
   glyphs: [],
   halftone: {
     // 60 lines across a 2048 frame is a 34-pixel dot: coarse enough to read as

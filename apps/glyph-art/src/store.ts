@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { defaultBandGlyphs, markSpecs } from "./engine/marks";
 import { fitPeak, rebalance, type DensityLookup } from "./engine/ramp";
-import { applyPreset, type Preset } from "./presets";
+import { applyPreset, defaultGradientSteps, findPreset, type Preset } from "./presets";
 import {
   defaultBandCount,
   defaultSettings,
@@ -74,6 +74,7 @@ type GlobalKey =
   | "outputWidth"
   | "hold"
   | "animation"
+  | "gradient"
   | "levels";
 
 type GlyphArtStore = {
@@ -87,6 +88,7 @@ type GlyphArtStore = {
   selectBand: (index: number) => void;
   setGlobal: <Key extends GlobalKey>(key: Key, value: Settings[Key], editKey?: string) => void;
   enableGridAnimation: (animation: GridAnimation, minimumFrames: number) => void;
+  enableSpatialGradient: (enabled: boolean) => void;
   setBandCount: (count: number) => void;
   setBandGlyphs: (index: number, glyphs: string[]) => void;
   setBandSize: (index: number, size: number | null) => void;
@@ -145,6 +147,16 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
     enableGridAnimation: (animation, minimumFrames) => edit((settings) => {
       settings.animation = animation;
       settings.stillFrames = Math.max(settings.stillFrames, Math.round(minimumFrames));
+    }),
+
+    enableSpatialGradient: (enabled) => edit((settings) => {
+      if (settings.gradient.steps.length === 0) {
+        settings.gradient.steps = defaultGradientSteps();
+        settings.peak = Math.min(settings.peak,
+          ...settings.gradient.steps.map((id) => findPreset(id)!.peak));
+        settings.maxSize = Math.min(settings.maxSize, 1.45);
+      }
+      settings.gradient.enabled = enabled;
     }),
 
     setBandCount: (count) => edit((settings) => {

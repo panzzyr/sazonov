@@ -38,6 +38,7 @@ import {
   type PresetGroupData,
 } from "./generatedPresets";
 import { packShelves } from "./sheetPacking";
+import { reactionsPreset } from "./reactions";
 import type { Band, GlyphSpec, Settings } from "./types";
 
 export { presetLevels, presetMaxSize } from "./generatedPresets";
@@ -147,7 +148,7 @@ function decodeLevels(
 /** The most of any level's weight that its foreign marks may carry. Matches the build. */
 const foreignShare = 0.3;
 
-export const presets: Preset[] = presetEras.flatMap((era) => {
+export const historicalPresets: Preset[] = presetEras.flatMap((era) => {
   const nativeGlyphs = glyphsOf(era.native.groups);
   const native = decodeLevels(
     era.native.levels,
@@ -202,14 +203,32 @@ export const presets: Preset[] = presetEras.flatMap((era) => {
   }];
 });
 
+export const presets: Preset[] = [...historicalPresets, reactionsPreset];
+
 /** The presets grouped by era, in the order the tool lists them. */
-export const presetEraList = presetEras.map((era) => ({
+export const presetEraList = [...presetEras.map((era) => ({
   label: era.label,
   presets: presets.filter((preset) => preset.era === era.label),
-}));
+})), { label: reactionsPreset.era, presets: [reactionsPreset] }];
+
+/** Start with the requested WWII → Civil War example, then every other era. */
+export function defaultGradientSteps() {
+  return ["great-patriotic", "civil",
+    ...presetEras.map((era) => era.id).filter((id) => id !== "great-patriotic" && id !== "civil"),
+    reactionsPreset.id];
+}
+
+export function gradientPresets(settings: Pick<Settings, "gradient">): Preset[] {
+  if (!settings.gradient?.enabled) return [];
+  return settings.gradient.steps.flatMap((id) => {
+    const preset = findPreset(id);
+    return preset ? [preset] : [];
+  });
+}
 
 const presetGlyphMap = new Map(
-  [...groupGlyphs.values()].flatMap((glyphs) => glyphs.map((glyph) => [glyph.id, glyph] as const)),
+  [...groupGlyphs.values(), reactionsPreset.glyphs]
+    .flatMap((glyphs) => glyphs.map((glyph) => [glyph.id, glyph] as const)),
 );
 
 /** Every shipped mark id, for validating untrusted project files. */
@@ -286,7 +305,7 @@ export function bandWeights(band: Band): readonly number[] | undefined {
  * Every mark the project needs loaded: its own, plus the preset marks its
  * bands name by reference.
  */
-export function librarySpecs(settings: Pick<Settings, "glyphs" | "bands">): GlyphSpec[] {
+export function librarySpecs(settings: Pick<Settings, "glyphs" | "bands"> & Partial<Pick<Settings, "gradient">>): GlyphSpec[] {
   const specs = [...settings.glyphs];
   const seen = new Set(specs.map((spec) => spec.id));
   for (const band of settings.bands) {
@@ -295,6 +314,15 @@ export function librarySpecs(settings: Pick<Settings, "glyphs" | "bands">): Glyp
         if (seen.has(mark)) continue;
         seen.add(mark);
         specs.push(presetGlyphMap.get(mark)!);
+      }
+    }
+  }
+  if (settings.gradient) {
+    for (const preset of gradientPresets({ gradient: settings.gradient })) {
+      for (const spec of preset.glyphs) {
+        if (seen.has(spec.id)) continue;
+        seen.add(spec.id);
+        specs.push(spec);
       }
     }
   }
@@ -325,6 +353,8 @@ export function activePreset(settings: Settings): Preset | undefined {
  * means nothing for another.
  */
 export function applyPreset(settings: Settings, preset: Preset) {
+  // Picking a single set returns to the normal ramp; the gradient is retained.
+  settings.gradient.enabled = false;
   settings.bands = preset.levels.map((_, index): Band => ({
     glyphs: [levelToken(preset.id, index)],
     size: null,

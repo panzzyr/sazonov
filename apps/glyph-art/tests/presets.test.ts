@@ -14,7 +14,7 @@ import {
   presetEraList,
   presetGlyphIds,
   presetLevels,
-  presets,
+  historicalPresets as presets,
 } from "../src/presets";
 import { presetGroups, presetSizeAlphabet } from "../src/generatedPresets";
 import { presetMetrics } from "../src/generatedPresetMetrics";
@@ -23,6 +23,7 @@ import { bandCenter, cellCoverage, coverageFor, poolCorrection, solveRamp } from
 import { initialSettings } from "../src/store";
 import { encodeSettings, parseSettings, shareableSettings } from "../src/projectState";
 import { defaultSettings } from "../src/types";
+import { reactionsPreset } from "../src/reactions";
 
 const publicRoot = path.resolve(fileURLToPath(new URL("../public", import.meta.url)));
 
@@ -72,6 +73,7 @@ describe("what the presets ship", () => {
       ["Russian", "+ Spanish, Finnish, Mongolian & Japanese"],
       ["Russian", "+ German"],
       ["Russian", "+ Korean, Vietnamese, Arabic, Hebrew & Dari"],
+      ["Monochrome"],
     ]);
   });
 
@@ -157,7 +159,7 @@ describe("what the presets ship", () => {
 
   it("has no id in two groups", () => {
     const marks = presetGroups.reduce((total, group) => total + group.sizes.length / 2, 0);
-    expect(presetGlyphIds.size).toBe(marks);
+    expect(presetGlyphIds.size).toBe(marks + reactionsPreset.glyphs.length);
   });
 });
 

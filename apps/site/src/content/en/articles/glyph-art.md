@@ -46,7 +46,7 @@ press Enter, or leave the field, to commit it.
 
 ## The grid
 
-`cells` is how many cells fit across the width, from 8 to 240. The height
+`cells` is how many cells fit across the width, from 1 to 240. The height
 follows the source's own proportions. 72 is a good place to start: a face
 survives at 72, becomes an abstraction near 48, and turns into texture past 120.
 Below about eight pixels per cell the marks stop reading as marks and you are
@@ -223,6 +223,36 @@ transparency, so a letter *is* a connected island of ink, and finding those
 islands is ordinary image morphology — about a tenth of a second per page. The
 tool never needs to know which letter a mark is, because it sizes marks by the
 ink it measures, not by their names.
+
+## Spatial step gradient
+
+Enable `blend steps across the image` in `step gradient` to move through every
+historical era across one picture. This is a spatial transition, not a change
+over time. The default order starts with the Great Patriotic War, then the Civil
+War, includes all the remaining eras and ends with `Digital reactions`.
+
+Choose the direction, move historical steps with the arrow buttons, and choose
+each era's Russian or foreign-print variant. `transition` controls the width of
+the mixing area: 0 gives distinct areas, 1 mixes throughout the transition.
+Neighbouring steps exchange whole marks — no grey or translucent symbols.
+The source tone still controls their size. `weight`, `max ink`, `max mark`,
+`levels`, spacing, inversions and grid animation remain available. `fit ramp`
+checks every step. The per-band editor returns when you disable the gradient;
+your custom ramp has not been overwritten. Picking a single preset also
+disables the gradient without discarding its order.
+
+The last step contains simplified monochrome fire and press F / salute marks,
+a views eye, and counters with or without the eye. Every counter has exactly two
+digits: `17k` and `1,7k`, never `17,1k`. There are 180 values. Wide counters live
+on the lighter levels; the darkest levels use icons to retain enough ink.
+Counters use Roboto Medium contours; no installed font is needed. All these
+marks export as native SVG paths, without text, emoji, external fonts or embedded
+images. Historical scans continue to export as traced curves.
+
+All steps load their local sheets the first time you enable the gradient, so
+this takes longer than loading a single era. Export waits until the marks are
+ready. `save`, `share`, undo and redo preserve gradient settings. SVG still exports
+the current playhead frame; PNG and MP4 retain their existing sequence behaviour.
 
 ## Marks
 

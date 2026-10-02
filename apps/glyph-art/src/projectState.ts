@@ -26,6 +26,7 @@ import {
   defaultBandCount,
   defaultSettings,
   dotShapes,
+  gradientDirections,
   markKinds,
   maxBands,
   maxExportFrames,
@@ -60,9 +61,10 @@ import {
   type Range,
   type Settings,
   type Spacing,
+  type SpatialGradient,
 } from "./types";
 import { defaultBandGlyphs, markDefinitions, markSpecs } from "./engine/marks";
-import { levelMarks, presetGlyph, presetGlyphIds } from "./presets";
+import { defaultGradientSteps, findPreset, levelMarks, presetGlyph, presetGlyphIds } from "./presets";
 import { initialSettings } from "./store";
 
 /**
@@ -104,15 +106,20 @@ function readGlyphs(value: unknown): GlyphSpec[] {
     if (!markKinds.includes(kind as GlyphSpec["kind"])) continue;
     if (source.length > maxGlyphSourceBytes) continue;
     if (seen.has(id)) continue;
+    // Shipped reaction vectors, like sheets, are restored by identity. A
+    // project cannot replace their outlines with arbitrary geometry.
+    if (presetGlyphIds.has(id)) {
+      seen.add(id);
+      glyphs.push(presetGlyph(id)!);
+      continue;
+    }
     // Only the schemes the app itself produces; nothing that could fetch.
     if (kind === "file" && !source.startsWith("data:image/")) continue;
     // A preset is a path this build hands to an `<img>`, so it is accepted by
     // identity rather than by inspection: only ids this build generated pass,
     // and the path and box are taken from the build, never from the file.
     if (kind === "preset") {
-      if (!presetGlyphIds.has(id)) continue;
-      seen.add(id);
-      glyphs.push(presetGlyph(id)!);
+      // Known IDs were restored above; all other preset paths are rejected.
       continue;
     }
     seen.add(id);
@@ -186,6 +193,20 @@ function readAnimation(value: unknown): GridAnimation {
   };
 }
 
+function readGradient(value: unknown): SpatialGradient {
+  const fallback = structuredClone(defaultSettings.gradient);
+  if (!isObject(value)) return fallback;
+  const steps = Array.isArray(value.steps) ? value.steps.slice(0, 24)
+    .filter((id): id is string => typeof id === "string" && Boolean(findPreset(id))) : [];
+  return {
+    enabled: value.enabled === true,
+    direction: gradientDirections.includes(value.direction as SpatialGradient["direction"])
+      ? value.direction as SpatialGradient["direction"] : fallback.direction,
+    blend: number(value.blend, fallback.blend, 0, 1),
+    steps: steps.length >= 2 ? steps : value.enabled === true ? defaultGradientSteps() : [],
+  };
+}
+
 /** Six-digit hex only. Anything else is a string the CSS parser would guess at. */
 function readInk(value: unknown, fallback: string) {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
@@ -247,6 +268,7 @@ export function parseSettings(value: unknown): Settings {
   ) / 2) * 2;
   settings.hold = Math.round(number(incoming.hold, defaultSettings.hold, minHold, maxHold));
   settings.animation = readAnimation(incoming.animation);
+  settings.gradient = readGradient(incoming.gradient);
   if (settings.animation.enabled && settings.stillFrames < 2) {
     settings.stillFrames = settings.targetFps * 4;
   }

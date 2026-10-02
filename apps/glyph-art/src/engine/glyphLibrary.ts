@@ -56,6 +56,8 @@ export type MeasuredGlyph = {
   bitmap: HTMLCanvasElement;
   /** Where the mark's tight box sits on `bitmap`. */
   box: MarkBox;
+  /** Original vector coordinates to the loose mask's cropped pixel frame. */
+  vectorTransform?: { scaleX: number; scaleY: number; offsetX: number; offsetY: number };
 };
 
 /** Draws a mark's tight box into a rectangle — the one way a mark is drawn. */
@@ -200,7 +202,7 @@ function blank(bitmap = makeCanvas(1, 1), at: MarkBox = { x: 0, y: 0, width: 1, 
  * transparency would measure as empty under that rule, so it falls back to
  * alpha alone rather than silently disappearing.
  */
-function measure(canvas: HTMLCanvasElement): Measured {
+function measure(canvas: HTMLCanvasElement, vector?: GlyphSpec["vector"]): Measured {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("This browser did not give us a 2D canvas.");
   const { width, height } = canvas;
@@ -244,6 +246,10 @@ function measure(canvas: HTMLCanvasElement): Measured {
     aspect: box.width / box.height,
     bitmap: mask,
     box: { x: 0, y: 0, width: box.width, height: box.height },
+    ...(vector ? { vectorTransform: {
+      scaleX: width / vector.width, scaleY: height / vector.height,
+      offsetX: -box.x, offsetY: -box.y,
+    } } : {}),
   };
 }
 
@@ -308,6 +314,7 @@ function measureOnSheet(sheet: Sheet, [x, y, width, height]: [number, number, nu
  * lookups are synchronous; loading happens once, up front, in `ensure`.
  */
 export class GlyphLibrary {
+  private generation = 0;
   private entries = new Map<string, MeasuredGlyph>();
   private signatures = new Map<string, string>();
   private sheets = new Map<string, Promise<Sheet>>();
@@ -349,6 +356,7 @@ export class GlyphLibrary {
    * order marks finish in cannot change what any of them measures.
    */
   async ensure(specs: GlyphSpec[], onProgress?: (loaded: number, total: number) => void) {
+    const generation = ++this.generation;
     const wanted = new Set(specs.map((spec) => spec.id));
     for (const id of [...this.entries.keys()]) {
       if (!wanted.has(id)) {
@@ -371,6 +379,7 @@ export class GlyphLibrary {
 
     let done = 0;
     const settle = (spec: GlyphSpec, signature: string, measured: Measured) => {
+      if (generation !== this.generation) return;
       this.entries.set(spec.id, { spec, ...measured });
       this.signatures.set(spec.id, signature);
       done += 1;
@@ -391,17 +400,21 @@ export class GlyphLibrary {
 
     const sheetWork = [...bySheet].map(async ([source, group]) => {
       const sheet = await this.sheet(source);
-      for (const { spec, signature } of group) settle(spec, signature, measureOnSheet(sheet, spec.rect!));
+      for (const { spec, signature } of group) {
+        if (generation !== this.generation) return;
+        settle(spec, signature, measureOnSheet(sheet, spec.rect!));
+      }
     });
 
     let next = 0;
     const worker = async () => {
       for (;;) {
+        if (generation !== this.generation) return;
         const index = next;
         next += 1;
         if (index >= loose.length) return;
         const { spec, signature } = loose[index];
-        settle(spec, signature, measure(await rasterize(spec)));
+        settle(spec, signature, measure(await rasterize(spec), spec.vector));
       }
     };
 

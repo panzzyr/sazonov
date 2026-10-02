@@ -99,7 +99,12 @@ export async function exportPngSequence(options: PngExportOptions) {
             .join(", ")}`,
         ]
         : []),
-      `bands: ${settings.bands.length}`,
+      ...(settings.gradient.enabled ? [
+        `spatial step gradient: ${settings.gradient.direction}`,
+        `transition width: ${settings.gradient.blend}`,
+        `step order: ${settings.gradient.steps.join(" -> ")}`,
+        "bands per step: 12",
+      ] : [`bands: ${settings.bands.length}`]),
       `seed: ${settings.seed}`,
     ];
   const readme = [

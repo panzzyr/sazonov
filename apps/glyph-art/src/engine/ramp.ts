@@ -18,7 +18,7 @@
  * Nothing here touches the DOM, so the ramp is unit-testable without a canvas.
  */
 
-import { bandGlyphs } from "../presets";
+import { bandGlyphs, gradientPresets, levelToken } from "../presets";
 import { minMarkSize, type Band, type Settings } from "../types";
 
 /** The tone a band represents: its centre, 0 at the lightest, 1 at the darkest. */
@@ -135,7 +135,15 @@ export function solveRamp(settings: Settings, lookup: DensityLookup): SolvedBand
  * failure the button exists to prevent. Pool members count too, because each
  * one is sized to match its band's ink and a sparse member is sized up to do it.
  */
-export function fitPeak(settings: Settings, lookup: DensityLookup) {
+export function fitPeak(settings: Settings, lookup: DensityLookup): number {
+  const steps = gradientPresets(settings);
+  if (steps.length > 1) {
+    return Math.min(...steps.map((preset) => fitPeak({
+      ...settings,
+      gradient: { ...settings.gradient, enabled: false },
+      bands: preset.levels.map((_, index) => ({ glyphs: [levelToken(preset.id, index)], size: null })),
+    }, lookup)));
+  }
   let peak = Infinity;
 
   settings.bands.forEach((band, index) => {

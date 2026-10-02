@@ -19,7 +19,8 @@ import { bandFor, pitchAspect, type ToneField } from "./tone";
 import { cumulativeWeights, cycleIndex, handDraw, weightedCycleIndex } from "./cellParams";
 import { poolCorrection, solveRamp, type SolvedBand } from "./ramp";
 import { drawGlyph, type GlyphLibrary, type MeasuredGlyph } from "./glyphLibrary";
-import { bandGlyphs, bandWeights } from "../presets";
+import { bandGlyphs, bandWeights, gradientPresets, levelToken } from "../presets";
+import { gradientPosition, gradientStep } from "../spatialGradient";
 import { minMarkSize, outputFrameSize, type ExportInk, type Settings } from "../types";
 
 /**
@@ -97,18 +98,31 @@ export function* glyphPlacements(
     const weights = bandWeights(band);
     return weights ? cumulativeWeights(weights) : null;
   });
+  const steps = gradientPresets(settings).map((preset) => {
+    const bands = preset.levels.map((_, index) => ({ glyphs: [levelToken(preset.id, index)], size: null }));
+    return {
+      pools: preset.levels,
+      totals: preset.weights.map(cumulativeWeights),
+      ramp: solveRamp({ ...settings, bands }, library.metrics),
+    };
+  });
 
   for (let y = 0; y < field.gridH; y += 1) {
     for (let x = 0; x < field.gridW; x += 1) {
       const cellIndex = y * field.gridW + x;
-      const band = bandFor(field.tone[cellIndex], settings.levels, bandCount, settings.rampInvert);
-      const pool = pools[band];
+      const step = steps.length > 1 ? steps[gradientStep(
+        gradientPosition(settings.gradient.direction, x, y, field.gridW, field.gridH),
+        steps.length, settings.gradient.blend, settings.seed, cellIndex,
+      )] : undefined;
+      const band = bandFor(field.tone[cellIndex], settings.levels,
+        step?.pools.length ?? bandCount, settings.rampInvert);
+      const pool = (step?.pools ?? pools)[band];
       if (!pool || pool.length === 0) continue;
 
       const reference = library.get(pool[0]);
       if (!reference || reference.density <= 0) continue;
 
-      const weighted = totals[band];
+      const weighted = (step?.totals ?? totals)[band];
       const chosen = pool.length === 1
         ? reference
         : library.get(pool[weighted
@@ -119,7 +133,7 @@ export function* glyphPlacements(
       const hand = handDraw(settings.seed, cellIndex, settings.hand);
       const size = Math.min(
         settings.maxSize,
-        ramp[band].size * poolCorrection(reference, chosen) * hand.sizeScale,
+        (step?.ramp ?? ramp)[band].size * poolCorrection(reference, chosen) * hand.sizeScale,
       );
       if (size < minMarkSize) continue;
 

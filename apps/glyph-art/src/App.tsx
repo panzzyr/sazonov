@@ -3,6 +3,7 @@ import { ToolShell } from "./shared/Shell";
 import { RampEditor } from "./components/RampEditor";
 import { RangeControl, SliderControl } from "./components/RangeControl";
 import { GridAnimation } from "./components/GridAnimation";
+import { SpatialGradient } from "./components/SpatialGradient";
 import { GlyphLibrary, readFileAsDataUrl } from "./engine/glyphLibrary";
 import { GlyphRenderer } from "./engine/render";
 import { HalftoneRenderer } from "./engine/halftone";
@@ -22,7 +23,7 @@ import {
   MAX_EXPORT_FRAMES,
   type ExportSource,
 } from "./export/renderSequence";
-import { activePreset, bandGlyphs, levelMarks, librarySpecs, presetEraList } from "./presets";
+import { activePreset, bandGlyphs, gradientPresets, levelMarks, librarySpecs, presetEraList } from "./presets";
 import { decodeSettings, encodeSettings, hasCustomMarks, parseSettings } from "./projectState";
 import { useGlyphArtStore } from "./store";
 import {
@@ -152,6 +153,7 @@ export function App() {
   const [markText, setMarkText] = useState("");
   const [markFont, setMarkFont] = useState(fontStacks[0].id);
   const [libraryVersion, setLibraryVersion] = useState(0);
+  const [readyMarks, setReadyMarks] = useState("");
   const [loadingMarks, setLoadingMarks] = useState<{ done: number; total: number } | null>(null);
   const [separationPlates, setSeparationPlates] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
@@ -165,8 +167,8 @@ export function App() {
   const libraryRef = useRef<GlyphLibrary | null>(null);
   // The project's own marks plus the preset marks its bands name by reference.
   const specs = useMemo(
-    () => librarySpecs({ glyphs: settings.glyphs, bands: settings.bands }),
-    [settings.glyphs, settings.bands],
+    () => librarySpecs(settings),
+    [settings.glyphs, settings.bands, settings.gradient.enabled, settings.gradient.steps],
   );
   const glyphsRef = useRef(specs);
   const leveledRef = useRef<Media | null>(null);
@@ -187,7 +189,19 @@ export function App() {
   const glyphSignature = settings.glyphs
     .map((spec) => `${spec.id}:${spec.kind}:${spec.font ?? ""}:${spec.source.length}`)
     .join("|")
-    + `|${settings.bands.flatMap((band) => band.glyphs).filter((id) => levelMarks(id)).join(",")}`;
+    + `|${settings.bands.flatMap((band) => band.glyphs).filter((id) => levelMarks(id)).join(",")}`
+    + `|${settings.gradient.enabled ? settings.gradient.steps.join(",") : ""}`;
+  const marksReady = readyMarks === glyphSignature;
+
+  // A sequence owns its settings and marks. Changing either invalidates that
+  // snapshot, so cancel rather than export frames from two different projects.
+  useEffect(() => {
+    const controller = abortRef.current;
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+      setMessage("Settings changed; export cancelled. Export again when ready.");
+    }
+  }, [settings, media]);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,6 +215,7 @@ export function App() {
       .then(() => {
         if (cancelled) return;
         setLoadingMarks(null);
+        setReadyMarks(glyphSignature);
         setLibraryVersion((version) => version + 1);
       })
       .catch((error: unknown) => {
@@ -319,7 +334,7 @@ export function App() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !field || !fieldReady) return;
+    if (!canvas || !field || !fieldReady || (renderSettings.mode === "glyph" && !marksReady)) return;
     try {
       if (renderSettings.mode === "halftone") {
         if (frameWidth === 0) return;
@@ -348,7 +363,7 @@ export function App() {
     // `raster` is a fresh object every render, so the frame enters as two
     // numbers; depending on the object would redraw the screen on every
     // keystroke anywhere in the interface.
-  }, [field, fieldReady, renderSettings, frame, frameWidth, frameHeight, library, libraryVersion, ramp]);
+  }, [field, fieldReady, renderSettings, frame, frameWidth, frameHeight, library, libraryVersion, ramp, marksReady]);
 
   useEffect(() => {
     if (frame < totalFrames) return;
@@ -471,7 +486,7 @@ export function App() {
   };
 
   const runExport = useCallback(async () => {
-    if (!exportSource) return;
+    if (!exportSource || abortRef.current || (settings.mode === "glyph" && !marksReady)) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setPlaying(false);
@@ -529,7 +544,7 @@ export function App() {
       abortRef.current = null;
       setBusy(null);
     }
-  }, [exportSource, field, fieldReady, format, frame, frameWidth, frameHeight, inks, library, media?.name, ramp, renderSettings, separationPlates, settings, totalFrames]);
+  }, [exportSource, field, fieldReady, format, frame, frameWidth, frameHeight, inks, library, media?.name, ramp, renderSettings, separationPlates, settings, totalFrames, marksReady]);
 
   const copyShareLink = useCallback(() => {
     window.location.hash = `p=${encodeSettings(settings)}`;
@@ -594,7 +609,10 @@ export function App() {
   const cell = field && frameWidth > 0
     ? frameWidth / field.gridW / (1 + renderSettings.spacing.x)
     : 0;
-  const poolLengths = settings.bands.map((band) => bandGlyphs(band).length);
+  const gradientPools = gradientPresets(settings).flatMap((step) => step.levels);
+  const poolLengths = gradientPools.length > 0
+    ? gradientPools.map((pool) => pool.length)
+    : settings.bands.map((band) => bandGlyphs(band).length);
   const seamless = loopLength(poolLengths, settings.hold);
   const cycling = poolLengths.some((length) => length > 1);
   const halftoning = settings.mode === "halftone";
@@ -687,9 +705,13 @@ export function App() {
             )}
           </section>
 
+          {!halftoning && <SpatialGradient />}
+
           {!halftoning && (
             <section className="panel-block">
               <h2><Icon name="presets" />presets</h2>
+              <details className="step-details" open={!settings.gradient.enabled}>
+              <summary>single-step presets</summary>
               {presetEraList.map((era) => (
                 <div key={era.label} className="preset-era">
                   <p className="preset-era-label">{era.label}</p>
@@ -698,7 +720,7 @@ export function App() {
                       <button
                         key={entry.id}
                         type="button"
-                        aria-pressed={preset?.id === entry.id}
+                        aria-pressed={!settings.gradient.enabled && preset?.id === entry.id}
                         aria-label={entry.label}
                         onClick={() => usePreset(entry)}
                       >
@@ -716,6 +738,7 @@ export function App() {
                 you pick it. Only the marks change — the grid, the levels and the inversions
                 stay where you put them.
               </p>
+              </details>
             </section>
           )}
 
@@ -815,13 +838,13 @@ export function App() {
               </>
             ) : (
               <>
-                <SliderControl
+                {!settings.gradient.enabled && <SliderControl
                   label="bands"
                   value={settings.bands.length}
                   min={minBands}
                   max={maxBands}
                   onChange={(value) => setBandCount(value)}
-                />
+                />}
                 <SliderControl
                   label="weight"
                   value={settings.weight}
@@ -956,7 +979,7 @@ export function App() {
             </section>
           )}
 
-          {!halftoning && (
+          {!halftoning && !settings.gradient.enabled && (
           <section className="panel-block">
             <h2><Icon name="marks" />marks</h2>
             <div className="field">
@@ -1258,9 +1281,9 @@ export function App() {
                     + (halftone.separation === "mono"
                       ? "One plate, black on white."
                       : "The plates are set to multiply, the way the inks do.")
-                  : "Exports the current frame as editable vector paths — one outline per mark, "
-                    + "traced from the same measured masks used by the preview, gathered into one "
-                    + "path per ink. Fine antialiasing becomes a hard contour, and every impression "
+                  : "Exports the current frame as editable vector paths, gathered into one "
+                    + "path per ink. Reaction marks keep their native curves; scanned marks are "
+                    + "traced from the preview masks. Fine antialiasing becomes a hard contour, and every impression "
                     + "is written out, so a fine grid makes a large file."}
               </p>
             ) : format === "png" ? (
@@ -1303,7 +1326,7 @@ export function App() {
             <button
               type="button"
               className="primary"
-              disabled={!media || busy !== null}
+              disabled={!media || busy !== null || (!halftoning && !marksReady)}
               onClick={() => void runExport()}
             >
               {busy ? `${busy.label} ${busy.done}/${busy.total}` : "export"}
@@ -1342,7 +1365,7 @@ export function App() {
           </section>
         </aside>
 
-        {!halftoning && (
+        {!halftoning && !settings.gradient.enabled && (
         <RampEditor
           settings={settings}
           ramp={ramp}

@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-02 — glyph art blends historical steps spatially and preserves reaction vectors
+
+- **Decision:** Mix neighbouring era presets by seeded cell selection along an editable spatial axis. Keep one tone curve across all steps, with digital reactions last. Preserve the existing single-preset ramp separately.
+- **Alternatives:** Fade two rendered images; select steps by brightness; animate step changes in time; trace emoji rasterizations.
+- **Reason:** The requested transition is spatial and must remain one-colour, deterministic and compatible with editable SVG, including animated grids.
+- **Consequences:** Projects and links store only step IDs, order, direction and transition width. SVG shares preview placements; fire, salute, views and counters retain native filled contours. The user-requested Telegram-style counters use a modified Roboto Medium alphabet (Apache-2.0), bundled as paths with attribution, not a web font. No dependencies or runtime connections are added. All era sheets load on first enabling the gradient; old projects open with it disabled.
+
 ## 2026-09-24 — glyph art animates grid density on a normalized timeline
 
 - **Decision:** Store grid keyframes at positions from 0 to 1, interpolate them per frame, and establish one fixed export frame from the densest keyframe.

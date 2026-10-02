@@ -1,4 +1,4 @@
-const CACHE = "glyph-art-v1";
+const CACHE = "glyph-art-v2";
 // The worker is served from the app's base, so its own path gives the prefix.
 // That keeps the same file correct at / and at /glyph-art/.
 const BASE = self.location.pathname.replace(/sw\.js$/, "");
@@ -12,7 +12,8 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("glyph-art-") && key !== CACHE)
+        .map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
