@@ -79,6 +79,13 @@ export function Support() {
             resolutions make individual symbols harder to read. A screen pitch below
             2px can alias in PNG or video, even though SVG retains vector dots.
           </p>
+          <p>
+            <em>step gradient</em> can blend any selection of shipped presets, from
+            two steps to twenty-four. <em>keep first + last</em> removes the intermediate
+            steps in one edit. Expand the step list to replace a preset, remove, add or
+            reorder steps; <em>all steps</em> restores the full default sequence. Project
+            files, links and SVG keep the selected sequence rather than reinstating all eras.
+          </p>
         </section>
 
         <section>

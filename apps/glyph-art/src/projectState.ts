@@ -34,6 +34,7 @@ import {
   maxGain,
   maxGrid,
   maxGridKeyframes,
+  maxGradientSteps,
   maxHold,
   maxLines,
   maxOutputWidth,
@@ -46,6 +47,7 @@ import {
   minFps,
   minGain,
   minGrid,
+  minGradientSteps,
   minHold,
   minLines,
   minOutputWidth,
@@ -196,14 +198,14 @@ function readAnimation(value: unknown): GridAnimation {
 function readGradient(value: unknown): SpatialGradient {
   const fallback = structuredClone(defaultSettings.gradient);
   if (!isObject(value)) return fallback;
-  const steps = Array.isArray(value.steps) ? value.steps.slice(0, 24)
+  const steps = Array.isArray(value.steps) ? value.steps.slice(0, maxGradientSteps)
     .filter((id): id is string => typeof id === "string" && Boolean(findPreset(id))) : [];
   return {
     enabled: value.enabled === true,
     direction: gradientDirections.includes(value.direction as SpatialGradient["direction"])
       ? value.direction as SpatialGradient["direction"] : fallback.direction,
     blend: number(value.blend, fallback.blend, 0, 1),
-    steps: steps.length >= 2 ? steps : value.enabled === true ? defaultGradientSteps() : [],
+    steps: steps.length >= minGradientSteps ? steps : value.enabled === true ? defaultGradientSteps() : [],
   };
 }
 

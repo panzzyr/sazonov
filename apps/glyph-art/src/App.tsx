@@ -168,6 +168,9 @@ export function App() {
   const libraryRef = useRef<GlyphLibrary | null>(null);
   // Attaching media to a restored project must not silently reroll its artwork.
   const preserveNextMediaSymbols = useRef(false);
+  const preserveAttachedMediaLevels = useRef(false);
+  const sampledMediaRef = useRef<Media | null>(null);
+  const sampledFieldRef = useRef<ToneField | null>(null);
   // The project's own marks plus the preset marks its bands name by reference.
   const specs = useMemo(
     () => librarySpecs(settings),
@@ -262,6 +265,8 @@ export function App() {
   const fieldReady = Boolean(
     field
     && previewGrid
+    && sampledMediaRef.current === media
+    && sampledFieldRef.current === field
     && field.gridW === previewGrid.gridW
     && field.gridH === previewGrid.gridH,
   );
@@ -317,7 +322,11 @@ export function App() {
       }
       const source = media.kind === "video" ? media.video : media.bitmap;
       const next = sampleSource(source, media.width, media.height, gridW, gridH, scratchRef.current!, cellAspect);
-      if (!cancelled) setField(next);
+      if (!cancelled) {
+        sampledMediaRef.current = media;
+        sampledFieldRef.current = next;
+        setField(next);
+      }
     };
     void run();
     return () => {
@@ -328,10 +337,15 @@ export function App() {
   // Auto-levels, once per source. A flat photo quantized into seven bands uses
   // four of them and looks dead; per-frame levels on a video would pump.
   useEffect(() => {
-    if (!field || !media || leveledRef.current === media) return;
+    if (!field || !fieldReady || !media || sampledMediaRef.current !== media
+      || leveledRef.current === media) return;
     leveledRef.current = media;
+    if (preserveAttachedMediaLevels.current) {
+      preserveAttachedMediaLevels.current = false;
+      return;
+    }
     setGlobal("levels", autoLevels(field.tone));
-  }, [field, media, setGlobal]);
+  }, [field, fieldReady, media, setGlobal]);
 
   const ramp = useMemo(
     () => solveRamp(settings, library.metrics),
@@ -411,6 +425,7 @@ export function App() {
     setPreviewZoom(1);
     const url = URL.createObjectURL(file);
     const chooseSymbols = () => {
+      preserveAttachedMediaLevels.current = preserveNextMediaSymbols.current;
       if (!preserveNextMediaSymbols.current) shuffleSymbols();
       preserveNextMediaSymbols.current = false;
     };

@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-05 — step gradients use an editable subset of presets
+
+- **Decision:** Allow 2–24 chosen steps, each replaceable with any shipped preset; add removal, insertion, free ordering and a one-click keep-first-and-last shortcut.
+- **Alternatives:** Always include every era, or offer only a fixed two-step preset.
+- **Reason:** The owner wants only the first step and the reaction finale now, and arbitrary step selections later.
+- **Consequences:** Defaults and existing projects keep their sequences. Subsets use the existing shared placement/export renderer and compact preset ids; undo/redo, shuffle, links and grid animation remain compatible. Reactions remain last by default but can be reordered explicitly. Restored projects also retain their tone levels when media is attached, rather than recalculating auto-levels on a different grid. No dependencies added.
+
 ## 2026-10-02 — glyph art supports denser grids and halftone screens
 
 - **Decision:** Raise cells and screen lines to 512 across, including animation, project validation and share links; adapt halftone source sampling up to 1024 columns.

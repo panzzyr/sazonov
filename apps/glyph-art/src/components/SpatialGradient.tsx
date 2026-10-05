@@ -1,17 +1,41 @@
-import { presetEraList, findPreset } from "../presets";
+import { useState } from "react";
+import { presetEraList, findPreset, defaultGradientSteps } from "../presets";
 import { reactionIcons } from "../reactions";
 import { useGlyphArtStore } from "../store";
-import type { SpatialGradient as Gradient } from "../types";
+import { minGradientSteps, maxGradientSteps, type SpatialGradient as Gradient } from "../types";
 import { SliderControl } from "./RangeControl";
 
+function PresetOptions({ compact = false }: { compact?: boolean }) {
+  return presetEraList.map((era) => <optgroup key={era.label} label={era.label}>
+    {era.presets.map((preset) => <option key={preset.id} value={preset.id}>
+      {compact ? preset.variant : `${preset.era} · ${preset.variant}`}
+    </option>)}
+  </optgroup>);
+}
+
 export function SpatialGradient() {
+  const [newStep, setNewStep] = useState(presetEraList[0].presets[0].id);
   const gradient = useGlyphArtStore((state) => state.settings.gradient);
   const enable = useGlyphArtStore((state) => state.enableSpatialGradient);
   const setGlobal = useGlyphArtStore((state) => state.setGlobal);
   const update = (value: Partial<Gradient>) => setGlobal("gradient", { ...gradient, ...value });
   const move = (index: number, delta: number) => {
+    if (index + delta < 0 || index + delta >= gradient.steps.length) return;
     const steps = [...gradient.steps];
     [steps[index], steps[index + delta]] = [steps[index + delta], steps[index]];
+    update({ steps });
+  };
+  const remove = (index: number) => {
+    if (gradient.steps.length <= minGradientSteps) return;
+    update({ steps: gradient.steps.filter((_, at) => at !== index) });
+  };
+  const add = () => {
+    if (gradient.steps.length >= maxGradientSteps) return;
+    const steps = [...gradient.steps];
+    // Retain the usual reaction finale when adding another historical step.
+    const at = steps.at(-1) === "digital-reactions" && newStep !== "digital-reactions"
+      ? steps.length - 1 : steps.length;
+    steps.splice(at, 0, newStep);
     update({ steps });
   };
 
@@ -38,30 +62,46 @@ export function SpatialGradient() {
       <SliderControl label="transition" value={gradient.blend} min={0} max={1} step={0.05}
         onChange={(blend) => update({ blend })} />
       <p className="control-hint">0 gives distinct areas; 1 mixes throughout each transition.
-        Move a step to change the order, or choose its foreign-print variant.</p>
+        Choose any preset for each step, remove unwanted steps, or add more.
+        Keep at least two steps; arrows change their order.</p>
+      <div className="button-row">
+        <button type="button" disabled={gradient.steps.length <= minGradientSteps}
+          onClick={() => update({ steps: [gradient.steps[0], gradient.steps[gradient.steps.length - 1]] })}>
+          keep first + last
+        </button>
+        <button type="button" onClick={() => update({ steps: defaultGradientSteps() })}>all steps</button>
+      </div>
       <details className="step-details">
-      <summary>steps · order and variants</summary>
+      <summary>steps · {gradient.steps.length} selected</summary>
       <ol className="gradient-steps">
         {gradient.steps.map((id, index) => {
           const preset = findPreset(id)!;
-          const era = presetEraList.find((entry) => entry.label === preset.era)!;
-          const last = id === "digital-reactions";
           return <li key={`${index}:${id}`}>
             <div className="gradient-step-name"><span>{index + 1}.</span><span>{preset.era}</span></div>
             <div className="gradient-step-controls">
-              <select aria-label={`step ${index + 1} variant`} value={id} disabled={era.presets.length < 2}
+              <select aria-label={`step ${index + 1} preset`} value={id}
                 onChange={(event) => update({ steps: gradient.steps.map((step, at) => at === index ? event.target.value : step) })}>
-                {era.presets.map((entry) => <option key={entry.id} value={entry.id}>{entry.variant}</option>)}
+                <PresetOptions compact />
               </select>
-              <button type="button" aria-label={`move step ${index + 1} up`} disabled={index === 0 || last}
+              <button type="button" aria-label={`move step ${index + 1} up`} disabled={index === 0}
                 onClick={() => move(index, -1)}>↑</button>
               <button type="button" aria-label={`move step ${index + 1} down`}
-                disabled={last || index === gradient.steps.length - 1 || gradient.steps[index + 1] === "digital-reactions"}
+                disabled={index === gradient.steps.length - 1}
                 onClick={() => move(index, 1)}>↓</button>
+              <button type="button" aria-label={`remove step ${index + 1}`} title="Remove this step"
+                disabled={gradient.steps.length <= minGradientSteps} onClick={() => remove(index)}>×</button>
             </div>
           </li>;
         })}
       </ol>
+      <div className="field">
+        <select aria-label="new step preset" value={newStep} onChange={(event) => setNewStep(event.target.value)}>
+          <PresetOptions />
+        </select>
+        <button type="button" disabled={gradient.steps.length >= maxGradientSteps} onClick={add}>add step</button>
+      </div>
+      <p className="control-hint">{minGradientSteps}–{maxGradientSteps} steps. Changes can be undone;
+        projects and links keep only the selected steps.</p>
       </details>
     </>}
     <div className="reaction-samples" aria-label="digital reactions: fire, salute, views, two-digit counters">

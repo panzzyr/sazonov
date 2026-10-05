@@ -135,6 +135,8 @@ export type GridAnimation = {
 };
 
 export const gradientDirections = ["down", "up", "right", "left"] as const;
+export const minGradientSteps = 2;
+export const maxGradientSteps = 24;
 export type SpatialGradient = {
   enabled: boolean;
   direction: (typeof gradientDirections)[number];

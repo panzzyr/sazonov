@@ -1,4 +1,4 @@
-const CACHE = "glyph-art-v5";
+const CACHE = "glyph-art-v6";
 // The worker is served from the app's base, so its own path gives the prefix.
 // That keeps the same file correct at / and at /glyph-art/.
 const BASE = self.location.pathname.replace(/sw\.js$/, "");

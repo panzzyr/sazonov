@@ -13,7 +13,7 @@ import { solveRamp } from "../src/engine/ramp";
 import type { GlyphLibrary, MeasuredGlyph } from "../src/engine/glyphLibrary";
 import { exportSvg } from "../src/export/svg";
 import { presetMetrics } from "../src/generatedPresetMetrics";
-import type { Settings } from "../src/types";
+import { maxGradientSteps, type Settings } from "../src/types";
 
 function gradientSettings(): Settings {
   const settings = initialSettings();
@@ -93,6 +93,23 @@ describe("spatial step selection", () => {
     for (const placement of first.slice(-10)) expect(sets[2].has(placement.glyph.spec.id)).toBe(true);
     expect(next.map((placement) => sets.findIndex((ids) => ids.has(placement.glyph.spec.id))))
       .toEqual(first.map((placement) => sets.findIndex((ids) => ids.has(placement.glyph.spec.id))));
+  });
+
+  it("uses only two chosen steps, with no hidden intermediate eras", () => {
+    const settings = gradientSettings();
+    settings.gradient.steps = [defaultGradientSteps()[0], "digital-reactions"];
+    const library = libraryFor(settings);
+    const field = { gridW: 10, gridH: 11, tone: new Float32Array(110).fill(0.6), color: new Uint8ClampedArray(330) };
+    const marks = [...glyphPlacements({ settings, library, field, frame: 0, ink: "flat" },
+      solveRamp(settings, library.metrics), cellGeometry(settings, 1000, 10))];
+    const first = new Set(findPreset(settings.gradient.steps[0])!.glyphs.map((glyph) => glyph.id));
+    const last = new Set(reactionsPreset.glyphs.map((glyph) => glyph.id));
+    expect(marks).toHaveLength(110);
+    for (const mark of marks.slice(0, 10)) expect(first.has(mark.glyph.spec.id)).toBe(true);
+    for (const mark of marks.slice(-10)) expect(last.has(mark.glyph.spec.id)).toBe(true);
+    for (const mark of marks) expect(first.has(mark.glyph.spec.id) || last.has(mark.glyph.spec.id)).toBe(true);
+    const own = new Set(settings.glyphs.map((glyph) => glyph.id));
+    for (const glyph of librarySpecs(settings)) expect(own.has(glyph.id) || first.has(glyph.id) || last.has(glyph.id)).toBe(true);
   });
 });
 
@@ -196,6 +213,40 @@ describe("gradient project compatibility", () => {
     expect(restored.animation).toEqual(settings.animation);
     expect(parseSettings({ version: 2, settings }).gradient).toEqual(settings.gradient);
     expect(parseSettings({}).gradient.enabled).toBe(false);
+  });
+
+  it("keeps an arbitrary two-step subset through files, links and gradient disable/enable", () => {
+    const settings = gradientSettings();
+    settings.gradient.steps = ["northern-and-patriotic-french", "digital-reactions"];
+    expect(parseSettings({ settings }).gradient).toEqual(settings.gradient);
+    expect(decodeSettings(encodeSettings(settings)).gradient).toEqual(settings.gradient);
+    useGlyphArtStore.getState().replaceSettings(settings);
+    useGlyphArtStore.getState().enableSpatialGradient(false);
+    useGlyphArtStore.getState().enableSpatialGradient(true);
+    expect(useGlyphArtStore.getState().settings.gradient.steps).toEqual(settings.gradient.steps);
+  });
+
+  it("allows repeated and freely ordered steps, capped at the stated maximum", () => {
+    const steps = Array.from({ length: maxGradientSteps + 3 }, (_, index) =>
+      index % 2 ? "crimean" : "digital-reactions");
+    expect(parseSettings({ gradient: { enabled: true, steps } }).gradient.steps)
+      .toEqual(steps.slice(0, maxGradientSteps));
+  });
+
+  it("collapses to the first and last in one undoable edit without changing custom bands", () => {
+    const settings = gradientSettings();
+    useGlyphArtStore.setState({ settings, past: [], future: [], lastEditKey: "" });
+    const steps = [settings.gradient.steps[0], settings.gradient.steps.at(-1)!];
+    useGlyphArtStore.getState().setGlobal("gradient", { ...settings.gradient, steps });
+    const reduced = useGlyphArtStore.getState().settings;
+    expect(reduced.gradient.steps).toEqual(steps);
+    expect(reduced.bands).toEqual(settings.bands);
+    expect(reduced.seed).toBe(settings.seed);
+    expect(reduced.glyphSeed).not.toBe(settings.glyphSeed);
+    useGlyphArtStore.getState().undo();
+    expect(useGlyphArtStore.getState().settings.gradient.steps).toEqual(settings.gradient.steps);
+    useGlyphArtStore.getState().redo();
+    expect(useGlyphArtStore.getState().settings.gradient.steps).toEqual(steps);
   });
 
   it("rejects external steps and arbitrary vector metadata in untrusted project files", () => {
