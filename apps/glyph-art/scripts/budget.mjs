@@ -56,6 +56,8 @@ for (const block of module.slice(module.indexOf("export const presetEras")).spli
   if (foreign) presets.push([foreign[1], [...JSON.parse(native[1]), ...JSON.parse(foreign[2])]]);
 }
 if (presets.length === 0) throw new Error("glyph art's budget found no presets in generatedPresets.ts.");
+// The separate owner-curated collection is not a harvested historical era.
+presets.push(["church-slavonic-vedomosti", ["church-slavonic-vedomosti"]]);
 
 for (const [id, groups] of presets) {
   const bytes = groups.reduce((sum, group) => {

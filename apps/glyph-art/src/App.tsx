@@ -524,7 +524,7 @@ export function App() {
       ? "rendering PNG"
       : format === "mp4"
         ? "encoding MP4"
-        : settings.mode === "halftone" ? "drawing SVG" : "tracing SVG";
+        : "drawing SVG";
     setBusy({ label, done: 0, total: format === "svg" ? 1 : totalFrames });
 
     const stem = (media?.name ?? "glyph-art").replace(/\.[^.]+$/, "");
@@ -768,6 +768,11 @@ export function App() {
                 more than 30% of a level. An era loads its sheets, up to a few megabytes, when
                 you pick it. Only the marks change — the grid, the levels and the inversions
                 stay where you put them.
+              </p>
+              <p className="control-hint">
+                Church Slavonic Vedomosti is a separate hand-picked collection of 104
+                symbols, with no marks mixed in from other sets. Its original-resolution
+                scans are reused across tone levels and are not automatically screened.
               </p>
               </details>
             </section>

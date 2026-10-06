@@ -35,3 +35,11 @@ It prints the module to stdout. Review the result before replacing
 keep the license notice, then run `pnpm check`. The application composes counters
 from this alphabet; exported SVGs contain filled paths, not font references,
 `text`, emoji, masks or raster images.
+
+The library rasterizes those SVGs only for canvas preview and density/tight-box
+measurement. SVG export reads `spec.vector.path` and applies the same placement
+to its original contours; it does not read or retrace the bitmap. Native path
+coordinates retain thousandth-pixel precision (scanned outlines keep their
+existing tenth-pixel precision). Regression tests export all 183 reaction marks
+with bitmap access forbidden and compare every contour and control point to
+the original transformed geometry, including rotation and cropped measurement.

@@ -40,6 +40,7 @@ import {
 import { packShelves } from "./sheetPacking";
 import { rejectedScanIndices } from "./generatedPresetQuality";
 import { reactionsPreset } from "./reactions";
+import { churchSlavonicPreset } from "./churchSlavonic";
 import type { Band, GlyphSpec, Settings } from "./types";
 
 export { presetLevels, presetMaxSize } from "./generatedPresets";
@@ -218,13 +219,17 @@ export const historicalPresets: Preset[] = presetEras.flatMap((era) => {
   }];
 });
 
-export const presets: Preset[] = [...historicalPresets, reactionsPreset];
+export const presets: Preset[] = [...historicalPresets, churchSlavonicPreset, reactionsPreset];
 
-/** The presets grouped by era, in the order the tool lists them. */
-export const presetEraList = [...presetEras.map((era) => ({
-  label: era.label,
-  presets: presets.filter((preset) => preset.era === era.label),
-})), { label: reactionsPreset.era, presets: [reactionsPreset] }];
+/** The presets grouped by era or curated collection, in interface order. */
+export const presetEraList = [
+  ...presetEras.map((era) => ({
+    label: era.label,
+    presets: presets.filter((preset) => preset.era === era.label),
+  })),
+  { label: churchSlavonicPreset.era, presets: [churchSlavonicPreset] },
+  { label: reactionsPreset.era, presets: [reactionsPreset] },
+];
 
 /** Start with the requested WWII → Civil War example, then every other era. */
 export function defaultGradientSteps() {
@@ -242,7 +247,7 @@ export function gradientPresets(settings: Pick<Settings, "gradient">): Preset[] 
 }
 
 const presetGlyphMap = new Map(
-  [...groupGlyphs.values(), reactionsPreset.glyphs]
+  [...groupGlyphs.values(), churchSlavonicPreset.glyphs, reactionsPreset.glyphs]
     .flatMap((glyphs) => glyphs.map((glyph) => [glyph.id, glyph] as const)),
 );
 

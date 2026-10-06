@@ -3,9 +3,9 @@
  *
  * Both modes end up here, and they arrive as different kinds of drawing.
  *
- * A glyph frame is *traced*: its marks are bitmaps — scans, type, uploaded
- * files — measured into alpha masks, and the honest vector of a scan is its
- * contour. Shipped reaction icons and counters retain their authored curves.
+ * Bitmap marks — scans, type, uploaded files — are traced from measured alpha
+ * masks. Shipped reaction icons and counters instead retain their authored
+ * curves: the preview's rasterization is never their export source.
  * A halftone frame is not traced at all, because it was never a
  * bitmap: the dots are solved from area as circles, ellipses and polygons, so
  * the SVG can carry the same geometry the canvas filled, exactly.
@@ -207,11 +207,12 @@ function svgDocument(size: Frame, title: string, description: string, body: stri
 }
 
 /**
- * The traced glyph frame: every impression written out, gathered by ink.
+ * The glyph frame: every impression written out, gathered by ink.
  *
- * Each mark's outline is traced once per printed size and then carried into
- * place by hand — scaled to the impression's box and rotated about its centre
- * — because a shared definition would mean the `<use>` that editors refuse.
+ * Bitmap outlines are traced once per printed size; native contours are read
+ * directly. Both are carried into place — scaled to the impression's box and
+ * rotated about its centre — because a shared definition would mean the
+ * `<use>` that editors refuse.
  *
  * In source-colour mode a mark takes the colour of the cell it belongs to,
  * where the canvas paints per-cell colour through the mask and a mark spilling
@@ -231,6 +232,10 @@ function glyphBody(options: SvgOptions) {
     const { glyph, width, height, centreX, centreY, rotation } = placement;
     const outline = markOutline(glyph, width, cache);
     if (outline.contours.length === 0) continue;
+    // Native contours must not inherit the coarse quantization of fitted scans,
+    // especially in dense grids where an entire counter can be just a few px.
+    const digits = glyph.spec.vector ? 3 : 1;
+    const n = (value: number) => decimal(value, digits);
 
     // The impression's own transform, applied to the points rather than
     // written as an attribute: a transform on a shared path is a `<use>` by
@@ -255,27 +260,26 @@ function glyphBody(options: SvgOptions) {
     // is four digits, and a frame holds hundreds of thousands of them.
     const data = outline.contours.map(({ start, segments }) => {
       const head = place(start);
-      // A tenth of a pixel, and every step is measured from the point that was
-      // actually written rather than from the exact one: rounding then lands
-      // each vertex within that tenth instead of drifting along the contour.
-      let written: Point = [Number(head[0].toFixed(1)), Number(head[1].toFixed(1))];
-      let run = `M${decimal(written[0], 1)} ${decimal(written[1], 1)}`;
+      // Measure every relative step from the written point to avoid cumulative
+      // rounding drift: scans use tenths, original vectors use thousandths.
+      let written: Point = [Number(n(head[0])), Number(n(head[1]))];
+      let run = `M${n(written[0])} ${n(written[1])}`;
       const step = (point: Point): Point => {
         const at = place(point);
-        return [Number((at[0] - written[0]).toFixed(1)), Number((at[1] - written[1]).toFixed(1))];
+        return [Number(n(at[0] - written[0])), Number(n(at[1] - written[1]))];
       };
 
       for (const segment of segments) {
         const end = step(segment.to);
         if (segment.kind === "line") {
-          if (end[0] === 0 && end[1] === 0) continue;
-          run += `l${decimal(end[0], 1)} ${decimal(end[1], 1)}`;
+          if (!glyph.spec.vector && end[0] === 0 && end[1] === 0) continue;
+          run += `l${n(end[0])} ${n(end[1])}`;
         } else {
           const first = step(segment.first);
           const second = step(segment.second);
-          run += `c${decimal(first[0], 1)} ${decimal(first[1], 1)}`
-            + ` ${decimal(second[0], 1)} ${decimal(second[1], 1)}`
-            + ` ${decimal(end[0], 1)} ${decimal(end[1], 1)}`;
+          run += `c${n(first[0])} ${n(first[1])}`
+            + ` ${n(second[0])} ${n(second[1])}`
+            + ` ${n(end[0])} ${n(end[1])}`;
         }
         written = [written[0] + end[0], written[1] + end[1]];
       }
@@ -410,7 +414,7 @@ export function exportSvg(options: SvgOptions, title: string) {
   return new Blob([svgDocument(
     size,
     title,
-    "Generated locally by glyph art. Mark masks were traced into vector paths.",
+    "Generated locally by glyph art. Native vectors retain original contours; bitmap marks are traced into editable paths.",
     glyphBody(options),
   )], { type: "image/svg+xml" });
 }

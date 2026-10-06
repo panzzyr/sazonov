@@ -154,10 +154,12 @@ export function Support() {
             that is exported, while the preview zoom only changes its size on screen.
           </p>
           <p>
-            In glyph mode, SVG exports the current frame as editable vector paths. Every
-            mark — including type and bitmap scans — is traced into an outline from the
-            measured mask used by the preview. Antialiased fringes become a hard contour;
-            PNG remains the exact raster reference.
+            In glyph mode, SVG exports the current frame as editable vector paths.
+            Digital reactions — fire, press F, views and counters — use their original
+            vector contours, never a retraced preview. Their raster copies only measure
+            density and draw the canvas. Bitmap scans and other rasterized marks are
+            traced from their measured masks; antialiased fringes become a hard contour,
+            while PNG remains the exact raster reference.
           </p>
           <p>
             Grid animation is written through the same frame renderer as the preview.

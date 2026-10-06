@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-06 — isolate the Church Slavonic collection and verify native SVG fidelity
+
+- **Decision:** Add a standalone Church Slavonic Vedomosti preset containing only the owner's 104 task1006-1 PNGs, losslessly packed at original resolution; reuse eligible symbols across twelve tone levels. Keep native reaction contours on their existing direct-vector export path and raise only their coordinate precision to 0.001px.
+- **Alternatives:** Mix the curated inputs into historical eras, reduce them to the old 80px scan limit, or retrace reaction preview bitmaps.
+- **Reason:** The owner requests a limited, exclusive collection and original SVG reactions. Auditing confirms reactions already bypass tracing, but export rounded even their curves to 0.1px and the help incorrectly described every mark as traced.
+- **Consequences:** The preset works with shuffle, projects, links and selectable gradient steps without changing default sequences. Input alpha hashes prove exact sheet preservation; tests forbid bitmap access when exporting all native reactions and compare the transformed original geometry. Historical tracing is unchanged, offline cache version advances, and no dependencies are added.
+
 ## 2026-10-05 — step gradients use an editable subset of presets
 
 - **Decision:** Allow 2–24 chosen steps, each replaceable with any shipped preset; add removal, insertion, free ordering and a one-click keep-first-and-last shortcut.
