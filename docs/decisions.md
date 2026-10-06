@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-06 — remove the Church Slavonic ornament
+
+- **Decision:** Exclude `a0009.png` from the curated collection and its generated sheet and tone pools, leaving 103 symbols.
+- **Alternatives:** Give it zero automatic selection weight but keep it shipped.
+- **Reason:** The owner finds it visually inconsistent and requests removal from the set.
+- **Consequences:** Remaining filename-based glyph ids and preset references stay stable. Regeneration cannot reintroduce the ornament; its original source file is preserved outside the repository. Offline cache version advances for the repacked sheet.
+
 ## 2026-10-06 — isolate the Church Slavonic collection and verify native SVG fidelity
 
 - **Decision:** Add a standalone Church Slavonic Vedomosti preset containing only the owner's 104 task1006-1 PNGs, losslessly packed at original resolution; reuse eligible symbols across twelve tone levels. Keep native reaction contours on their existing direct-vector export path and raise only their coordinate precision to 0.001px.

@@ -75,7 +75,7 @@ describe("what the presets ship", () => {
       ["Russian", "+ Spanish, Finnish, Mongolian & Japanese"],
       ["Russian", "+ German"],
       ["Russian", "+ Korean, Vietnamese, Arabic, Hebrew & Dari"],
-      ["Curated · 104 symbols"],
+      ["Curated · 103 symbols"],
       ["Monochrome"],
     ]);
   });

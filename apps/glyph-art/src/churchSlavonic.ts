@@ -22,7 +22,7 @@ export const churchSlavonicPreset: Preset = {
   id: "church-slavonic-vedomosti",
   label: "Church Slavonic Vedomosti",
   era: "Church Slavonic Vedomosti",
-  variant: "Curated · 104 symbols",
+  variant: `Curated · ${glyphs.length} symbols`,
   peak: churchSlavonicPeak,
   maxSize: churchSlavonicMaxSize,
   glyphs,

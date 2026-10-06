@@ -1,13 +1,15 @@
 # Church Slavonic Vedomosti
 
 This is the owner's separate `task1006-1/ASCII 1st vitrina` collection: exactly
-104 PNGs (85 `a0001`–`a0085` and 19 `Layer 3`–`Layer 21`), including the ornament.
+103 PNGs (84 from `a0001`–`a0085` and 19 `Layer 3`–`Layer 21`). The owner removed
+the ornament `a0009.png`; the generator explicitly excludes it, without deleting
+the original source file.
 No historical harvests, foreign marks, duplicates or automatic scan exclusions
-are added. Every supplied symbol participates in the twelve-level ramp. Sparse
+are added. Every retained symbol participates in the twelve-level ramp. Sparse
 forms remain on lighter levels rather than exceeding the size ceiling in shadows.
 
 The sheet is lossless and keeps every input's original dimensions and alpha
-values. Even the large ornament is not reduced to the historical 80px limit.
+values, without reduction to the historical 80px limit.
 The generated manifest records original-file and normalized-ink SHA-256 hashes;
 tests verify each rectangle against its ink hash, without needing source files
 on CI. These inputs are PNGs, so their SVG export necessarily uses bitmap

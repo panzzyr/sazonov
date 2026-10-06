@@ -14,13 +14,17 @@ const publicRoot = fileURLToPath(new URL("../public", import.meta.url));
 const metrics = new Map(preset.glyphs.map((glyph, index) => [glyph.id, churchSlavonicMarks[index]]));
 
 describe("the owner's exclusive Church Slavonic collection", () => {
-  it("contains all and only the 104 supplied inputs, with distinct stable ids", () => {
+  it("contains the 103 retained inputs and excludes the owner's removed ornament", () => {
     expect(churchSlavonicMarks.map((mark) => mark.name)).toEqual([
-      ...Array.from({ length: 85 }, (_, index) => `a${String(index + 1).padStart(4, "0")}.png`),
+      ...Array.from({ length: 85 }, (_, index) => `a${String(index + 1).padStart(4, "0")}.png`)
+        .filter((name) => name !== "a0009.png"),
       ...Array.from({ length: 19 }, (_, index) => `Layer ${index + 3}.png`),
     ]);
-    expect(preset.glyphs).toHaveLength(104);
-    expect(new Set(preset.glyphs.map((glyph) => glyph.id)).size).toBe(104);
+    expect(preset.glyphs).toHaveLength(103);
+    expect(new Set(preset.glyphs.map((glyph) => glyph.id)).size).toBe(103);
+    expect(presetGlyphIds.has("preset-church-slavonic-a0009")).toBe(false);
+    expect(presetGlyph("preset-church-slavonic-a0009")).toBeUndefined();
+    expect(preset.levels.flat()).not.toContain("preset-church-slavonic-a0009");
     expect(preset.foreign).toEqual([]);
     for (const glyph of preset.glyphs) {
       expect(presetGlyphIds.has(glyph.id)).toBe(true);
@@ -50,7 +54,6 @@ describe("the owner's exclusive Church Slavonic collection", () => {
       expect(createHash("sha256").update(ink).digest("hex"), mark.name).toBe(mark.inkHash);
       expect(mark.sha256).toMatch(/^[a-f0-9]{64}$/);
     }
-    expect(churchSlavonicMarks.find((mark) => mark.name === "a0009.png")!.rect.slice(2)).toEqual([755, 647]);
   });
 
   it("gives every symbol a place, with varied tone pools that do not exceed the size ceiling", () => {
@@ -80,7 +83,7 @@ describe("the owner's exclusive Church Slavonic collection", () => {
     expect(parseSettings({ settings }).bands).toEqual(settings.bands);
     const own = new Set(settings.glyphs.map((glyph) => glyph.id));
     const shipped = librarySpecs(settings).filter((glyph) => !own.has(glyph.id));
-    expect(shipped).toHaveLength(104);
+    expect(shipped).toHaveLength(103);
     expect(new Set(shipped.map((glyph) => glyph.id))).toEqual(new Set(preset.glyphs.map((glyph) => glyph.id)));
     settings.gradient = { ...settings.gradient, enabled: true, steps: [preset.id, "digital-reactions"] };
     expect(decodeSettings(encodeSettings(settings)).gradient).toEqual(settings.gradient);

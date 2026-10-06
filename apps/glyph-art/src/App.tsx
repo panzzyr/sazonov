@@ -770,7 +770,7 @@ export function App() {
                 stay where you put them.
               </p>
               <p className="control-hint">
-                Church Slavonic Vedomosti is a separate hand-picked collection of 104
+                Church Slavonic Vedomosti is a separate hand-picked collection of 103
                 symbols, with no marks mixed in from other sets. Its original-resolution
                 scans are reused across tone levels and are not automatically screened.
               </p>
