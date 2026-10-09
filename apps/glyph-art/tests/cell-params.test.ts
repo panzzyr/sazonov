@@ -38,6 +38,18 @@ describe("hand", () => {
 });
 
 describe("cycling", () => {
+  it("holds each cell's seeded pick forever without making all cells identical", () => {
+    const picks = new Set<number>();
+    for (let cell = 0; cell < 100; cell++) {
+      const first = cycleIndex(8471, cell, 17, 0, "infinite");
+      picks.add(first);
+      for (const frame of [1, 59, 900, 1_000_000]) {
+        expect(cycleIndex(8471, cell, 17, frame, "infinite")).toBe(first);
+      }
+      expect(first).toBe(cycleIndex(8471, cell, 17, 0, 2));
+    }
+    expect(picks.size).toBeGreaterThan(10);
+  });
   it("stays put when a band holds one mark", () => {
     for (let frame = 0; frame < 20; frame += 1) {
       expect(cycleIndex(8471, 3, 1, frame, 2)).toBe(0);
@@ -72,6 +84,9 @@ describe("cycling", () => {
 });
 
 describe("seamless loop length", () => {
+  it("is one static symbol frame even for huge pools when hold is infinite", () => {
+    expect(loopLength([7, 11, 13, 17, 19], "infinite")).toBe(1);
+  });
   it("is one frame when nothing cycles", () => {
     expect(loopLength([1, 1, 1], 2)).toBe(1);
     expect(loopLength([1], 1)).toBe(1);

@@ -270,7 +270,8 @@ export function parseSettings(value: unknown): Settings {
     minOutputWidth,
     maxOutputWidth,
   ) / 2) * 2;
-  settings.hold = Math.round(number(incoming.hold, defaultSettings.hold, minHold, maxHold));
+  settings.hold = incoming.hold === "infinite" ? "infinite"
+    : Math.round(number(incoming.hold, typeof defaultSettings.hold === "number" ? defaultSettings.hold : 2, minHold, maxHold));
   settings.animation = readAnimation(incoming.animation);
   settings.gradient = readGradient(incoming.gradient);
   if (settings.animation.enabled && settings.stillFrames < 2) {

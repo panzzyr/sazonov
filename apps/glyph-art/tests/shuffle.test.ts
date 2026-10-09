@@ -31,6 +31,38 @@ function placements(settings: Settings, frame = 0) {
 }
 
 describe("symbol-only shuffle", () => {
+  it("freezes preview and SVG selections across time but keeps explicit shuffle available", async () => {
+    const settings = initialSettings();
+    applyPreset(settings, findPreset("digital-reactions")!);
+    settings.hold = "infinite";
+    const first = placements(settings, 0);
+    const last = placements(settings, 239);
+    expect(last.draw).toEqual(first.draw);
+    const svg = await exportSvg(first.options, "frozen symbols").text();
+    expect(await exportSvg(last.options, "frozen symbols").text()).toBe(svg);
+    expect(placements({ ...settings, glyphSeed: 3814 }, 239).draw).not.toEqual(first.draw);
+  });
+
+  it("undoes infinite hold and frame-rate edits without changing animation or duration", () => {
+    const settings = initialSettings();
+    settings.stillFrames = 120;
+    settings.animation.enabled = true;
+    useGlyphArtStore.setState({ settings, past: [], future: [] });
+    useGlyphArtStore.getState().setGlobal("hold", "infinite");
+    useGlyphArtStore.getState().setGlobal("targetFps", 60);
+    const next = useGlyphArtStore.getState().settings;
+    expect(next.hold).toBe("infinite");
+    expect(next.targetFps).toBe(60);
+    expect(next.stillFrames).toBe(120);
+    expect(next.animation).toEqual(settings.animation);
+    useGlyphArtStore.getState().undo();
+    expect(useGlyphArtStore.getState().settings.targetFps).toBe(settings.targetFps);
+    expect(useGlyphArtStore.getState().settings.hold).toBe("infinite");
+    useGlyphArtStore.getState().undo();
+    expect(useGlyphArtStore.getState().settings).toEqual(settings);
+    useGlyphArtStore.getState().redo();
+    expect(useGlyphArtStore.getState().settings.hold).toBe("infinite");
+  });
   it("changes only the symbol seed, and each click has its own undo step", () => {
     const settings = initialSettings();
     settings.hand = 0.7;

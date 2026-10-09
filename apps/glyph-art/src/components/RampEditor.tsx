@@ -110,7 +110,7 @@ export function RampEditor({
           const pool = bandGlyphs(band)
             .map((id) => library.get(id))
             .filter((glyph): glyph is MeasuredGlyph => Boolean(glyph));
-          const shown = pool.length > 1
+          const shown = pool.length > 1 && settings.hold !== "infinite"
             ? pool[Math.floor(playhead / Math.max(1, settings.hold)) % pool.length]
             : pool[0];
           // The well shows the mark at the size it will actually print, which

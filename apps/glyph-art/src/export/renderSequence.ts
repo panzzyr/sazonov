@@ -7,8 +7,8 @@
  * way, so what you scrub through is what you get.
  *
  * A still is sampled once. Its tone field never changes, which means a still
- * only animates if a band holds more than one mark — an honest answer, and the
- * reason the tool is static until you ask it not to be.
+ * can animate through symbol cycling or grid keyframes. Infinite hold freezes
+ * only the former; it never shortens the sequence or stops the grid timeline.
  */
 
 import { GlyphRenderer, outputSize } from "../engine/render";

@@ -9,6 +9,7 @@ import {
 import { initialSettings, resampleBands, useGlyphArtStore } from "../src/store";
 import {
   maxBands,
+  maxFps,
   maxGrid,
   maxLines,
   maxOutputWidth,
@@ -44,7 +45,7 @@ describe("parsing an untrusted project", () => {
     expect(settings.grid).toBeGreaterThanOrEqual(minGrid);
     expect(settings.weight).toBeLessThanOrEqual(2.4);
     expect(settings.hand).toBe(0);
-    expect(settings.targetFps).toBe(16);
+    expect(settings.targetFps).toBe(maxFps);
     expect(settings.hold).toBe(1);
     expect(settings.outputWidth).toBe(maxOutputWidth);
     expect(parseSettings({ outputWidth: 1 }).outputWidth).toBe(minOutputWidth);
@@ -70,6 +71,24 @@ describe("parsing an untrusted project", () => {
       { at: 1, grid: maxGrid },
     ]);
     expect(settings.stillFrames).toBe(settings.targetFps * 4);
+  });
+
+  it("accepts 1–60 fps and infinite hold through JSON projects and share links", () => {
+    for (const targetFps of [1, 24, 30, 48, 60]) {
+      const settings = parseSettings({ targetFps, hold: "infinite", stillFrames: 120,
+        animation: { enabled: true, keyframes: [{ at: 0, grid: 72 }, { at: 1, grid: 1 }] } });
+      expect(settings.targetFps).toBe(targetFps);
+      expect(settings.hold).toBe("infinite");
+      expect(settings.stillFrames).toBe(120);
+      expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+      expect(decodeSettings(encodeSettings(settings))).toEqual(settings);
+    }
+    expect(parseSettings({ targetFps: 0 }).targetFps).toBe(1);
+    expect(parseSettings({ targetFps: 61 }).targetFps).toBe(60);
+    expect(parseSettings({ hold: 24 }).hold).toBe(24);
+    for (const hold of [null, "Infinity", "invalid", Infinity, NaN]) {
+      expect(parseSettings({ hold }).hold).toBe(initialSettings().hold);
+    }
   });
 
   it("migrates the old halftone frame width into the common output setting", () => {

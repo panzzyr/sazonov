@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { cumulativeWeights, weightedCycleIndex } from "../src/engine/cellParams";
 
 describe("weighted cycling", () => {
+  it("freezes presets at their frame-zero picks while retaining variety and excluding rejected scans", () => {
+    const totals = cumulativeWeights([1, 0, 2, 3, 4]);
+    const picks = new Set<number>();
+    for (let cell = 0; cell < 200; cell++) {
+      const first = weightedCycleIndex(9, cell, totals, 0, "infinite");
+      picks.add(first);
+      expect(first).not.toBe(1);
+      expect(first).toBe(weightedCycleIndex(9, cell, totals, 0, 2));
+      for (const frame of [1, 59, 900, 1_000_000]) {
+        expect(weightedCycleIndex(9, cell, totals, frame, "infinite")).toBe(first);
+      }
+    }
+    expect(picks.size).toBe(4);
+  });
   it("is deterministic for a seed, a cell and a frame", () => {
     const totals = cumulativeWeights([1, 2, 3, 4]);
     for (let cell = 0; cell < 50; cell += 1) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { frameProgress, gridAtProgress, referenceGrid, settingsAtFrame } from "../src/animation";
 import { defaultSettings, maxGrid, type Settings } from "../src/types";
+import { frameCount, type ExportSource } from "../src/export/renderSequence";
 
 function animated(interpolation: Settings["animation"]["interpolation"] = "linear"): Settings {
   return {
@@ -18,6 +19,17 @@ function animated(interpolation: Settings["animation"]["interpolation"] = "linea
 }
 
 describe("grid keyframes", () => {
+  it("keeps grid motion and output duration active at 60 fps with frozen symbols", () => {
+    const settings = { ...animated(), targetFps: 60, hold: "infinite" as const, stillFrames: 240 };
+    const source = { kind: "image" } as ExportSource;
+    expect(frameCount(source, settings)).toBe(240);
+    expect(settingsAtFrame(settings, 0, 241).grid).toBe(200);
+    expect(settingsAtFrame(settings, 120, 241).grid).toBe(1);
+    expect(settingsAtFrame(settings, 240, 241).grid).toBe(200);
+    expect(settingsAtFrame(settings, 120, 241).hold).toBe("infinite");
+    expect(frameCount({ kind: "video", duration: 2 } as ExportSource, settings)).toBe(120);
+    expect(frameCount({ kind: "video", duration: 100 } as ExportSource, settings)).toBe(900);
+  });
   it("reaches the exact first, middle and last keyframes", () => {
     const settings = animated();
     expect(gridAtProgress(settings, 0)).toBe(200);

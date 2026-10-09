@@ -120,6 +120,8 @@ export type HalftoneSettings = {
 export type Spacing = { x: number; y: number };
 
 export type GridInterpolation = "linear" | "ease-in-out" | "hold";
+/** JSON-safe infinite hold; numeric values preserve legacy cycling projects. */
+export type SymbolHold = number | "infinite";
 
 export type GridKeyframe = {
   /** Position in the clip, from the first frame (0) to the last (1). */
@@ -196,14 +198,14 @@ export type Settings = {
    * the marks themselves stay where they are on the ramp.
    */
   rampInvert: boolean;
-  /** Time posterization for video, 4..16 frames per second. */
+  /** Target frame rate for preview and export, 1..60 frames per second. */
   targetFps: number;
   /** Sequence length for a still source. */
   stillFrames: number;
   /** Output width in pixels. Height follows the source-derived frame aspect. */
   outputWidth: number;
-  /** Frames each mark of a cycling band is held for, 1..24. */
-  hold: number;
+  /** Frames each mark is held for, 1..24, or no temporal cycling at all. */
+  hold: SymbolHold;
   /** Optional timeline for the grid density. Static SVG still uses one frame. */
   animation: GridAnimation;
   gradient: SpatialGradient;
@@ -243,8 +245,8 @@ export const minWeight = 0.6;
 export const maxWeight = 2.4;
 export const minHold = 1;
 export const maxHold = 24;
-export const minFps = 4;
-export const maxFps = 16;
+export const minFps = 1;
+export const maxFps = 60;
 
 /** Guards against a long sequence exhausting memory mid-export. */
 export const maxExportFrames = 900;

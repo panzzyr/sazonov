@@ -288,6 +288,12 @@ When a band holds several marks they cycle. `hold` is how many frames each mark
 is held for, 1 to 24, and the panel shows what that works out to in marks per
 second at the current frame rate.
 
+`hold infinite` stops temporal symbol cycling while source video and grid
+keyframes keep moving. The seeded choice stays fixed for each cell and tone
+pool; crossing into another tone band or changing the grid can still choose
+another mark. Shuffle remains available. The setting does not shorten the
+sequence, and survives saved projects, links and undo.
+
 Cells within a band are deliberately out of phase with each other, so the
 surface simmers rather than flipping over all at once. Lockstep would read as a
 slideshow of two pictures; at `hold` 1 it would strobe.
@@ -301,7 +307,7 @@ For a still, `frames` sets the sequence length and `seamless loop` sets it to
 the shortest length where every band's cycle lines up again.
 
 For a video, the length comes from the clip. `frame rate` posterizes time to
-between 4 and 16 fps: frame N is whatever the source shows at N ÷ frame rate
+between 1 and 60 fps: frame N is whatever the source shows at N ÷ frame rate
 seconds, held, not blended.
 
 ## Halftone

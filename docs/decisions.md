@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-09 — support 1–60 fps and infinite symbol hold
+
+- **Decision:** Accept any integer frame rate from 1 to 60 and represent infinite hold with the JSON-safe string `infinite`, handled by both uniform and weighted symbol selection.
+- **Alternatives:** Store JavaScript Infinity (lost in JSON), use an arbitrarily large hold, or freeze the complete rendered frame.
+- **Reason:** The owner wants smoother grid animation without distracting ASCII symbol cycling.
+- **Consequences:** Playback, PNG, MP4 and SVG share the same seeded selection; grid motion and source video remain active, and tone-pool or cell-identity changes can still choose other symbols. Numeric legacy holds retain their behavior. Projects, links and undo preserve the mode; toggling hold never changes sequence length. Disable the symbol-loop duration shortcut during grid animation. Keep the existing 900-frame export memory guard, so 60 fps video export is capped at 15 seconds with the existing warning. No dependencies added.
+
 ## 2026-10-06 — remove the Church Slavonic ornament
 
 - **Decision:** Exclude `a0009.png` from the curated collection and its generated sheet and tone pools, leaving 103 symbols.

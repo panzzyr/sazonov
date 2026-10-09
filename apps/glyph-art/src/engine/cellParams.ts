@@ -13,6 +13,7 @@
  */
 
 import { randomFloat } from "./hash";
+import type { SymbolHold } from "../types";
 
 const ROTATION = 0;
 const OFFSET_X = 1;
@@ -61,16 +62,20 @@ export function handDraw(seed: number, cellIndex: number, hand: number): CellDra
  * and at hold = 1 it strobes; offset, the eye reads continuous activity with no
  * global event, which is what a print run or a flip-book actually looks like.
  */
+function cycleStep(frame: number, hold: SymbolHold) {
+  return hold === "infinite" ? 0 : Math.floor(frame / Math.max(1, hold));
+}
+
 export function cycleIndex(
   seed: number,
   cellIndex: number,
   poolLength: number,
   frame: number,
-  hold: number,
+  hold: SymbolHold,
 ) {
   if (poolLength <= 1) return 0;
   const phase = Math.floor(randomFloat(seed, 0, cellIndex, PHASE) * poolLength) % poolLength;
-  const step = Math.floor(frame / Math.max(1, hold));
+  const step = cycleStep(frame, hold);
   return (step + phase) % poolLength;
 }
 
@@ -103,13 +108,13 @@ export function weightedCycleIndex(
   cellIndex: number,
   cumulative: Float64Array,
   frame: number,
-  hold: number,
+  hold: SymbolHold,
 ) {
   const length = cumulative.length;
   if (length <= 1) return 0;
   const total = cumulative[length - 1];
   if (!(total > 0)) return 0;
-  const step = Math.floor(frame / Math.max(1, hold));
+  const step = cycleStep(frame, hold);
   const position = ((randomFloat(seed, 0, cellIndex, PHASE) + step * goldenStep) % 1) * total;
   let low = 0;
   let high = length - 1;
@@ -130,9 +135,9 @@ function greatestCommonDivisor(a: number, b: number): number {
  * every pool holds one mark, so this is 1 — an honest answer for a tool that
  * is static until the user asks for motion.
  */
-export function loopLength(poolLengths: number[], hold: number) {
+export function loopLength(poolLengths: number[], hold: SymbolHold) {
   // Nothing cycles, so every frame would be identical: one frame is the loop.
-  if (!poolLengths.some((length) => length > 1)) return 1;
+  if (hold === "infinite" || !poolLengths.some((length) => length > 1)) return 1;
   let multiple = 1;
   for (const length of poolLengths) {
     const value = Math.max(1, length);

@@ -103,6 +103,9 @@ export function Support() {
             files onto any band — those may be vector, even though the source may not. A
             band holding more than one mark cycles through them, one mark every{" "}
             <em>hold</em> frames, with each cell out of phase with its neighbours.
+            {" "}<em>hold infinite</em> freezes that temporal cycling, not the source
+            video or grid animation. Changing a cell's tone band or grid identity
+            can still select a different mark. Shuffle remains available.
           </p>
           <p>
             <em>shuffle symbols</em> redraws each cell from its full tone pool, not from

@@ -4,6 +4,7 @@ import { RampEditor } from "./components/RampEditor";
 import { RangeControl, SliderControl } from "./components/RangeControl";
 import { GridAnimation } from "./components/GridAnimation";
 import { SpatialGradient } from "./components/SpatialGradient";
+import { SymbolHold } from "./components/SymbolHold";
 import { GlyphLibrary, readFileAsDataUrl } from "./engine/glyphLibrary";
 import { GlyphRenderer } from "./engine/render";
 import { HalftoneRenderer } from "./engine/halftone";
@@ -33,7 +34,6 @@ import {
   maxFps,
   maxGain,
   maxGrid,
-  maxHold,
   maxLines,
   maxOutputWidth,
   maxPeak,
@@ -45,7 +45,6 @@ import {
   minFps,
   minGain,
   minGrid,
-  minHold,
   minLines,
   minOutputWidth,
   minPeak,
@@ -1270,15 +1269,12 @@ export function App() {
                 the same frame every time, so offering either would be a lie. */}
             {!halftoning && (
               <>
-                <SliderControl
-                  label="hold"
-                  value={settings.hold}
-                  min={minHold}
-                  max={maxHold}
-                  onChange={(value) => setGlobal("hold", Math.round(value))}
-                />
+                <SymbolHold value={settings.hold} onChange={(value) => setGlobal("hold", value)} />
                 <p className="control-hint">
-                  {cycling
+                  {settings.hold === "infinite"
+                    ? "Symbols do not cycle with time. Grid animation and source video still move. "
+                      + "Changing tone bands or grid cells can select different marks; shuffle still works."
+                    : cycling
                     ? `Each mark is held ${settings.hold} frame${settings.hold === 1 ? "" : "s"} — `
                       + `${(settings.targetFps / settings.hold).toFixed(1)} marks a second. `
                       + `Cells are out of phase with each other, so the surface simmers instead of flipping.`
@@ -1305,12 +1301,15 @@ export function App() {
                     <button
                       type="button"
                       onClick={() => setGlobal("stillFrames", seamless)}
-                      disabled={settings.stillFrames === seamless}
+                      disabled={settings.animation.enabled || settings.stillFrames === seamless}
                     >
-                      seamless loop: {seamless}
+                      {settings.hold === "infinite" ? "static symbols" : "seamless loop"}: {seamless}
                     </button>
                   </div>
                 )}
+                {!halftoning && settings.animation.enabled && <p className="control-hint">
+                  Grid motion uses the full sequence length; a symbol-cycle loop cannot set its duration.
+                </p>}
               </>
             )}
           </section>
