@@ -75,6 +75,7 @@ type GlobalKey =
   | "stillFrames"
   | "outputWidth"
   | "hold"
+  | "symbolMotion"
   | "animation"
   | "gradient"
   | "levels";
@@ -90,6 +91,7 @@ type GlyphArtStore = {
   selectBand: (index: number) => void;
   setGlobal: <Key extends GlobalKey>(key: Key, value: Settings[Key], editKey?: string) => void;
   enableGridAnimation: (animation: GridAnimation, minimumFrames: number) => void;
+  setSymbolMotionMode: (mode: Settings["symbolMotion"]["mode"]) => void;
   enableSpatialGradient: (enabled: boolean) => void;
   setBandCount: (count: number) => void;
   setBandGlyphs: (index: number, glyphs: string[]) => void;
@@ -155,6 +157,14 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
     enableGridAnimation: (animation, minimumFrames) => edit((settings) => {
       settings.animation = animation;
       settings.stillFrames = Math.max(settings.stillFrames, Math.round(minimumFrames));
+    }),
+
+    setSymbolMotionMode: (mode) => edit((settings) => {
+      settings.symbolMotion.mode = mode;
+      // Start a usable clip, but never overwrite a length the user already chose.
+      if (mode === "scatter" && settings.stillFrames < 2) {
+        settings.stillFrames = Math.max(2, settings.targetFps * 4);
+      }
     }),
 
     enableSpatialGradient: (enabled) => edit((settings) => {

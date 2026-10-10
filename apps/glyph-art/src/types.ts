@@ -122,6 +122,13 @@ export type Spacing = { x: number; y: number };
 export type GridInterpolation = "linear" | "ease-in-out" | "hold";
 /** JSON-safe infinite hold; numeric values preserve legacy cycling projects. */
 export type SymbolHold = number | "infinite";
+export type SymbolMotion = {
+  mode: "cycle" | "scatter";
+  /** Average percentage of eligible cells scheduled per interval. */
+  amount: number;
+  /** Milliseconds over which those updates are distributed. */
+  interval: number;
+};
 
 export type GridKeyframe = {
   /** Position in the clip, from the first frame (0) to the last (1). */
@@ -206,6 +213,7 @@ export type Settings = {
   outputWidth: number;
   /** Frames each mark is held for, 1..24, or no temporal cycling at all. */
   hold: SymbolHold;
+  symbolMotion: SymbolMotion;
   /** Optional timeline for the grid density. Static SVG still uses one frame. */
   animation: GridAnimation;
   gradient: SpatialGradient;
@@ -317,6 +325,7 @@ export const defaultSettings: Settings = {
   stillFrames: 1,
   outputWidth: 2048,
   hold: 2,
+  symbolMotion: { mode: "cycle", amount: 10, interval: 250 },
   animation: {
     enabled: false,
     interpolation: "ease-in-out",

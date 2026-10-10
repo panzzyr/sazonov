@@ -102,10 +102,22 @@ export function Support() {
             You can type characters to add more marks, or drop PNG, JPEG, SVG or WebP
             files onto any band — those may be vector, even though the source may not. A
             band holding more than one mark cycles through them, one mark every{" "}
-            <em>hold</em> frames, with each cell out of phase with its neighbours.
+            <em>hold</em> frames. Cells start on different marks, but classic cycle
+            advances them on shared frame boundaries.
             {" "}<em>hold infinite</em> freezes that temporal cycling, not the source
             video or grid animation. Changing a cell's tone band or grid identity
             can still select a different mark. Shuffle remains available.
+          </p>
+          <p>
+            Choose <em>scatter / matrix</em> under timing for independent, seeded
+            update clocks. <em>changes</em> is the average percentage of eligible
+            cells updated per <em>change interval</em>, in milliseconds. Updates
+            are spread through that interval rather than applied as one batch;
+            their locations change over time. One-mark bands cannot cycle.
+            A high-weight mark may be selected again. Higher FPS makes the
+            schedule finer, not faster. There is no crossfade or retracing:
+            PNG, MP4 and the current-frame SVG use the same original marks.
+            Scatter has no exact seamless loop. Infinite hold overrides both modes.
           </p>
           <p>
             <em>shuffle symbols</em> redraws each cell from its full tone pool, not from

@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-10 — scatter symbol animation with independent renewal clocks
+
+- **Decision:** Add optional scatter / matrix motion, with average eligible-cell update percentage and a millisecond interval. Give each cell one seeded random event per interval / fraction block, rehashing the event location in every block.
+- **Alternatives:** Globally switch a random batch per tick (still jerky), accumulate mutable cell histories (slow seeking and export divergence), or crossfade glyph bitmaps (breaks original-vector SVG fidelity).
+- **Reason:** Different initial symbols did not prevent classic cycling from switching all cells on the same frame boundary. Independent event times break that synchronization.
+- **Consequences:** Scheduling is constant-time per cell and stateless; seek order, preview, PNG, MP4, SVG, projects, links and undo agree. Percentage is an average event rate, not an exact batch size; one-mark pools cannot change and weighted choices may repeat. FPS controls temporal sampling, not motion speed. Legacy projects retain classic cycling; infinite hold overrides both. Scatter cannot claim a seamless loop. Timing shows clip seconds; switching a one-frame still to scatter starts four seconds in one undo step without overwriting existing lengths. Keep the overall UI layout; no new dependencies.
+
 ## 2026-10-09 — support 1–60 fps and infinite symbol hold
 
 - **Decision:** Accept any integer frame rate from 1 to 60 and represent infinite hold with the JSON-safe string `infinite`, handled by both uniform and weighted symbol selection.

@@ -273,6 +273,12 @@ export function parseSettings(value: unknown): Settings {
   settings.hold = incoming.hold === "infinite" ? "infinite"
     : Math.round(number(incoming.hold, typeof defaultSettings.hold === "number" ? defaultSettings.hold : 2, minHold, maxHold));
   settings.animation = readAnimation(incoming.animation);
+  const motion = isObject(incoming.symbolMotion) ? incoming.symbolMotion : {};
+  settings.symbolMotion = {
+    mode: motion.mode === "scatter" ? "scatter" : "cycle",
+    amount: number(motion.amount, defaultSettings.symbolMotion.amount, 1, 100),
+    interval: Math.round(number(motion.interval, defaultSettings.symbolMotion.interval, 16, 10000)),
+  };
   settings.gradient = readGradient(incoming.gradient);
   if (settings.animation.enabled && settings.stillFrames < 2) {
     settings.stillFrames = settings.targetFps * 4;

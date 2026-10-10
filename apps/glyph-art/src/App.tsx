@@ -1269,15 +1269,35 @@ export function App() {
                 the same frame every time, so offering either would be a lie. */}
             {!halftoning && (
               <>
-                <SymbolHold value={settings.hold} onChange={(value) => setGlobal("hold", value)} />
+                <div className="field">
+                  <label htmlFor="symbol-motion">symbol motion</label>
+                  <select id="symbol-motion" value={settings.symbolMotion.mode}
+                    onChange={(event) => useGlyphArtStore.getState()
+                      .setSymbolMotionMode(event.target.value as "cycle" | "scatter")}>
+                    <option value="cycle">classic cycle</option>
+                    <option value="scatter">scatter / matrix</option>
+                  </select>
+                </div>
+                <SymbolHold value={settings.hold} onChange={(value) => setGlobal("hold", value)}
+                  showFinite={settings.symbolMotion.mode === "cycle"} />
+                {settings.symbolMotion.mode === "scatter" && settings.hold !== "infinite" && <>
+                  <SliderControl label="changes" value={settings.symbolMotion.amount} min={1} max={100} unit="%"
+                    onChange={(amount) => setGlobal("symbolMotion", { ...settings.symbolMotion, amount }, "motion.amount")} />
+                  <SliderControl label="change interval" value={settings.symbolMotion.interval} min={16} max={10000} unit=" ms"
+                    onChange={(interval) => setGlobal("symbolMotion", { ...settings.symbolMotion, interval }, "motion.interval")} />
+                </>}
                 <p className="control-hint">
                   {settings.hold === "infinite"
                     ? "Symbols do not cycle with time. Grid animation and source video still move. "
                       + "Changing tone bands or grid cells can select different marks; shuffle still works."
+                    : settings.symbolMotion.mode === "scatter"
+                    ? `About ${settings.symbolMotion.amount}% of cycling cells update over each ${settings.symbolMotion.interval} ms, `
+                      + "at independent random times, not in one batch. A one-mark band cannot change. "
+                      + "At low FPS, updates still land on the same output frames."
                     : cycling
                     ? `Each mark is held ${settings.hold} frame${settings.hold === 1 ? "" : "s"} — `
                       + `${(settings.targetFps / settings.hold).toFixed(1)} marks a second. `
-                      + `Cells are out of phase with each other, so the surface simmers instead of flipping.`
+                      + "Cells start on different marks but switch on shared frame boundaries. Use scatter for gradual updates."
                     : "Put more than one mark on a band and they will cycle. Until then nothing moves."}
                 </p>
               </>
@@ -1291,6 +1311,7 @@ export function App() {
                   max={240}
                   onChange={(value) => setGlobal("stillFrames", Math.round(value))}
                 />
+                <p className="control-hint">Sequence: {(settings.stillFrames / settings.targetFps).toFixed(2)} seconds.</p>
                 {halftoning ? (
                   <p className="control-hint">
                     A still under a fixed screen is the same frame every time. Length only
@@ -1301,9 +1322,13 @@ export function App() {
                     <button
                       type="button"
                       onClick={() => setGlobal("stillFrames", seamless)}
-                      disabled={settings.animation.enabled || settings.stillFrames === seamless}
+                      disabled={settings.animation.enabled
+                        || (settings.symbolMotion.mode === "scatter" && settings.hold !== "infinite")
+                        || settings.stillFrames === seamless}
                     >
-                      {settings.hold === "infinite" ? "static symbols" : "seamless loop"}: {seamless}
+                      {settings.symbolMotion.mode === "scatter" && settings.hold !== "infinite"
+                        ? "scatter has no exact loop"
+                        : `${settings.hold === "infinite" ? "static symbols" : "seamless loop"}: ${seamless}`}
                     </button>
                   </div>
                 )}

@@ -31,6 +31,38 @@ function placements(settings: Settings, frame = 0) {
 }
 
 describe("symbol-only shuffle", () => {
+  it("scatter changes only a sparse subset in canvas and SVG placement, with reproducible seeks", async () => {
+    const settings = initialSettings();
+    applyPreset(settings, findPreset("digital-reactions")!);
+    settings.targetFps = 30;
+    settings.symbolMotion = { mode: "scatter", amount: 20, interval: 100 };
+    const first = placements(settings, 0);
+    const next = placements(settings, 3);
+    const changed = next.draw.filter((mark, i) => mark.glyph.spec.id !== first.draw[i].glyph.spec.id);
+    expect(changed.length).toBeGreaterThan(0);
+    expect(changed.length).toBeLessThan(first.draw.length * 0.3);
+    expect(next.draw.map(mark => mark.cellIndex)).toEqual(first.draw.map(mark => mark.cellIndex));
+    const svg = await exportSvg(next.options, "scatter").text();
+    expect(svg).not.toBe(await exportSvg(first.options, "scatter").text());
+    placements(settings, 900);
+    expect(await exportSvg(placements(settings, 3).options, "scatter").text()).toBe(svg);
+    expect(placements({ ...settings, hold: "infinite" }, 3).draw).toEqual(first.draw);
+  });
+
+  it("enables scatter as one undo step and preserves existing clip lengths", () => {
+    const settings = initialSettings();
+    useGlyphArtStore.setState({ settings, past: [], future: [] });
+    useGlyphArtStore.getState().setSymbolMotionMode("scatter");
+    expect(useGlyphArtStore.getState().settings.stillFrames).toBe(settings.targetFps * 4);
+    expect(useGlyphArtStore.getState().settings.symbolMotion.mode).toBe("scatter");
+    useGlyphArtStore.getState().undo();
+    expect(useGlyphArtStore.getState().settings).toEqual(settings);
+    useGlyphArtStore.getState().redo();
+    useGlyphArtStore.getState().setGlobal("stillFrames", 120);
+    useGlyphArtStore.getState().setSymbolMotionMode("cycle");
+    useGlyphArtStore.getState().setSymbolMotionMode("scatter");
+    expect(useGlyphArtStore.getState().settings.stillFrames).toBe(120);
+  });
   it("freezes preview and SVG selections across time but keeps explicit shuffle available", async () => {
     const settings = initialSettings();
     applyPreset(settings, findPreset("digital-reactions")!);

@@ -6,7 +6,8 @@ A monorepo for Stepan Sazonov's bilingual site and local-first creative tools.
 - `apps/printor/` — React/WebGL2 application deployed to
   `sazonov.space/printor/`.
 - `apps/glyph-art/` — local image/video glyph renderer, spatial step gradients,
-  grid keyframes and editable SVG at `sazonov.space/glyph-art/`.
+  grid keyframes, independently scattered symbol animation and editable SVG at
+  `sazonov.space/glyph-art/`.
 - `packages/tokens/` — shared monochrome design tokens.
 - `packages/shell/` — reusable shell for browser tools.
 

@@ -17,6 +17,7 @@
 
 import { bandFor, pitchAspect, type ToneField } from "./tone";
 import { cumulativeWeights, cycleIndex, handDraw, weightedCycleIndex } from "./cellParams";
+import { symbolFrame } from "./symbolMotion";
 import { poolCorrection, solveRamp, type SolvedBand } from "./ramp";
 import { drawGlyph, type GlyphLibrary, type MeasuredGlyph } from "./glyphLibrary";
 import { bandGlyphs, bandWeights, gradientPresets, levelToken } from "../presets";
@@ -123,11 +124,12 @@ export function* glyphPlacements(
       if (!reference || reference.density <= 0) continue;
 
       const weighted = (step?.totals ?? totals)[band];
+      const motion = symbolFrame(settings, cellIndex, frame);
       const chosen = pool.length === 1
         ? reference
         : library.get(pool[weighted
-          ? weightedCycleIndex(settings.glyphSeed, cellIndex, weighted, frame, settings.hold)
-          : cycleIndex(settings.glyphSeed, cellIndex, pool.length, frame, settings.hold)]);
+          ? weightedCycleIndex(settings.glyphSeed, cellIndex, weighted, motion.frame, motion.hold)
+          : cycleIndex(settings.glyphSeed, cellIndex, pool.length, motion.frame, motion.hold)]);
       if (!chosen || chosen.density <= 0) continue;
 
       const hand = handDraw(settings.seed, cellIndex, settings.hand);

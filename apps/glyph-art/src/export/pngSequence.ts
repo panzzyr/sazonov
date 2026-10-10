@@ -107,6 +107,10 @@ export async function exportPngSequence(options: PngExportOptions) {
       ] : [`bands: ${settings.bands.length}`]),
       `seed: ${settings.seed}`,
       `symbol seed: ${settings.glyphSeed}`,
+      `symbol motion: ${settings.hold === "infinite" ? "frozen" : settings.symbolMotion.mode}`,
+      ...(settings.symbolMotion.mode === "scatter" ? [
+        `changes: ${settings.symbolMotion.amount}% on average per ${settings.symbolMotion.interval} ms`,
+      ] : [`hold: ${settings.hold} frames`]),
     ];
   const readme = [
     `${stem} — glyph art PNG sequence`,

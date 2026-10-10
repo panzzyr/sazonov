@@ -294,9 +294,23 @@ pool; crossing into another tone band or changing the grid can still choose
 another mark. Shuffle remains available. The setting does not shorten the
 sequence, and survives saved projects, links and undo.
 
-Cells within a band are deliberately out of phase with each other, so the
-surface simmers rather than flipping over all at once. Lockstep would read as a
-slideshow of two pictures; at `hold` 1 it would strobe.
+In `classic cycle`, cells start on different marks, but their switches share
+the same frame boundaries. For less synchronized movement, choose
+`scatter / matrix` under timing. `changes` is the average percentage of
+eligible cells scheduled per `change interval` in milliseconds. For example,
+10% over 250 ms spreads roughly that many updates across a quarter-second,
+in scattered locations, rather than switching the whole surface together.
+Every cell gets an independent clock, with a fresh seeded event time in each
+time block. One-mark bands cannot change; a weighted pool may pick the same
+mark again. The percentage is an average rate, not a strict per-frame quota.
+
+This changes marks directly, without a fade, morph or raster retracing.
+Higher FPS makes the updates finer without changing their speed in seconds.
+Seeking backwards, saving a project, sharing a link and exporting reproduce
+the same schedule. Infinite hold overrides either mode. Scatter has no exact
+seamless loop, so that shortcut is disabled; `frames` still sets clip length.
+Enabling scatter starts a four-second clip if the source had only one frame;
+an existing sequence length is left alone. The timing panel shows its duration.
 
 Marks sharing a band should be variations of the same mark — three drawings of
 the same X, not three unrelated shapes. Unrelated shapes on random phase is
