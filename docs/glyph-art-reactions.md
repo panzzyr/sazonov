@@ -36,10 +36,10 @@ keep the license notice, then run `pnpm check`. The application composes counter
 from this alphabet; exported SVGs contain filled paths, not font references,
 `text`, emoji, masks or raster images.
 
-The library rasterizes those SVGs only for canvas preview and density/tight-box
-measurement. SVG export reads `spec.vector.path` and applies the same placement
-to its original contours; it does not read or retrace the bitmap. Native path
-coordinates retain thousandth-pixel precision (scanned outlines keep their
-existing tenth-pixel precision). Regression tests export all 183 reaction marks
+The library rasterizes those SVGs only for density/tight-box measurement.
+Preview, PNG, MP4 and SVG apply the same placement to their original contours;
+they do not draw or retrace the measurement bitmap. Exported path coordinates
+retain thousandth-pixel precision, including pre-traced historical outlines.
+Regression tests export all 183 reaction marks
 with bitmap access forbidden and compare every contour and control point to
 the original transformed geometry, including rotation and cropped measurement.

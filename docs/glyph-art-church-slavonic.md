@@ -12,8 +12,10 @@ The sheet is lossless and keeps every input's original dimensions and alpha
 values, without reduction to the historical 80px limit.
 The generated manifest records original-file and normalized-ink SHA-256 hashes;
 tests verify each rectangle against its ink hash, without needing source files
-on CI. These inputs are PNGs, so their SVG export necessarily uses bitmap
-contours, unlike the native-vector digital reaction preset.
+on CI. All 103 inputs are also pre-traced by `build-glyph-vectors.mjs`; Canvas
+and SVG use the same prepared contours. The lossless sheet stays a regeneration
+input and is not shipped in the production build. Native reactions still keep
+their original authored curves rather than going through tracing.
 
 Regenerate with existing Sharp (no new dependencies):
 
@@ -23,7 +25,8 @@ node scripts/build-church-slavonic.mjs /absolute/path/to/ASCII-directory
 
 The command writes the WebP sheet and prints `generatedChurchSlavonic.ts` on
 stdout. Review and replace that module, then run the same command with `--check`
-to verify both outputs and `pnpm check` to verify the project. Node 22.18+ is
+to verify both outputs, regenerate vectors with `node scripts/build-glyph-vectors.mjs`,
+and run `pnpm check` to verify the project. Node 22.18+ is
 required to reuse the TypeScript shelf packer. Default source directory is the
 owner's `task1006-1/ASCII 1st vitrina` folder next to this repository.
 

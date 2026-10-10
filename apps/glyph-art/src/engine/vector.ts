@@ -50,8 +50,8 @@ export function mapContours(contours: VectorContour[], map: (point: Point) => Po
   }));
 }
 
-export function contoursPath(contours: VectorContour[]) {
-  const p = (point: Point) => point.map((v) => Number(v.toFixed(3))).join(" ");
+export function contoursPath(contours: VectorContour[], digits = 3) {
+  const p = (point: Point) => point.map((v) => Number(v.toFixed(digits))).join(" ");
   return contours.map(({ start, segments }) => `M${p(start)}` + segments.map((segment) =>
     segment.kind === "line" ? `L${p(segment.to)}`
       : `C${p(segment.first)} ${p(segment.second)} ${p(segment.to)}`).join("") + "Z").join("");

@@ -1,5 +1,5 @@
 /**
- * Rasterizing and measuring marks.
+ * Measuring marks once; drawing the same vectors in every output format.
  *
  * Every mark — shipped, typed or uploaded — goes through the same measurement,
  * and that is deliberate. The ramp solver needs each mark's *ink density*: the
@@ -17,18 +17,19 @@
  * through an `<img>`, which also renders any uploaded SVG inert and leaves its
  * external references blocked by `connect-src 'none'`.
  *
- * Shipped preset marks are the one thing that comes off the network, and they
- * come off it as images: sprite sheets under the site's own base, loaded
- * through the same `<img>` and covered by `img-src 'self'`. A sheet is turned
- * into one ink mask, and every mark on it is a box on that mask rather than a
- * canvas of its own — nearly three thousand canvases at 256 px would be half a
- * gigabyte. Sheet marks are measured at the pixels they ship at, which are the
- * pixels the build measured; see `scripts/build-glyph-presets.mjs`.
+ * Preset scans are vectorized at build time and loaded as trusted, lazy local
+ * modules. Their original sprite sheets remain regeneration inputs, not render
+ * sources. Loose uploads and text are traced once on insertion. Authored native
+ * vectors retain their original curves. Export never traces the rendered frame.
  */
 
 import { fontStacks, type GlyphSpec } from "../types";
+import { outlineDensity, traceGlyph, unpackOutline, type GlyphOutline, type PackedOutline } from "./glyphOutline";
+import { mapContours, vectorContours } from "./vector";
 
-/** Marks are measured and cached at this size, then scaled down when drawn. */
+const packs = import.meta.glob<{ default: PackedOutline[] }>("../preset-vectors/*.ts");
+
+/** Loose marks are measured at this size; drawing uses their prepared curves. */
 const raster = 256;
 
 /** Below this an anti-aliased fringe would count as ink and inflate the box. */
@@ -50,15 +51,48 @@ export type MeasuredGlyph = {
   /** Tight box width over height. */
   aspect: number;
   /**
-   * Ink mask: black, with alpha carrying the ink. For a preset mark this is
-   * its whole sprite sheet, shared with the rest of the set.
+   * Optional measurement mask, not render artwork. Presets have no bitmap.
    */
-  bitmap: HTMLCanvasElement;
-  /** Where the mark's tight box sits on `bitmap`. */
+  bitmap?: HTMLCanvasElement;
+  /** Tight coordinate frame; also locates a legacy measurement mask. */
   box: MarkBox;
   /** Original vector coordinates to the loose mask's cropped pixel frame. */
   vectorTransform?: { scaleX: number; scaleY: number; offsetX: number; offsetY: number };
+  /** Prepared once, independent of printed size and animation frame. */
+  outline?: GlyphOutline;
 };
+
+const outlines = new WeakMap<MeasuredGlyph, GlyphOutline>();
+const paths = new WeakMap<GlyphOutline, Path2D>();
+
+/** Legacy/in-memory callers also prepare an outline once, never per export size. */
+export function glyphOutline(glyph: MeasuredGlyph): GlyphOutline {
+  if (glyph.outline) return glyph.outline;
+  const hit = outlines.get(glyph);
+  if (hit) return hit;
+  const { box, spec } = glyph;
+  let outline: GlyphOutline;
+  if (spec.vector) {
+    const transform = glyph.vectorTransform ?? {
+      scaleX: (glyph.bitmap?.width ?? box.width) / spec.vector.width,
+      scaleY: (glyph.bitmap?.height ?? box.height) / spec.vector.height,
+      offsetX: -box.x, offsetY: -box.y,
+    };
+    outline = { width: box.width, height: box.height,
+      contours: mapContours(vectorContours(spec.vector.path), ([x, y]) => [
+        x * transform.scaleX + transform.offsetX, y * transform.scaleY + transform.offsetY,
+      ]) };
+  } else {
+    const context = glyph.bitmap?.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("This mark has no prepared vector outline.");
+    const pixels = context.getImageData(box.x, box.y, box.width, box.height).data;
+    const alpha = new Uint8ClampedArray(box.width * box.height);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = pixels[i * 4 + 3];
+    outline = unpackOutline(traceGlyph(alpha, box.width, box.height));
+  }
+  outlines.set(glyph, outline);
+  return outline;
+}
 
 /** Draws a mark's tight box into a rectangle — the one way a mark is drawn. */
 export function drawGlyph(
@@ -69,8 +103,26 @@ export function drawGlyph(
   width: number,
   height: number,
 ) {
-  const { box } = glyph;
-  context.drawImage(glyph.bitmap, box.x, box.y, box.width, box.height, x, y, width, height);
+  const outline = glyphOutline(glyph);
+  let path = paths.get(outline);
+  if (!path) {
+    path = new Path2D();
+    for (const contour of outline.contours) {
+      path.moveTo(...contour.start);
+      for (const segment of contour.segments) {
+        if (segment.kind === "line") path.lineTo(...segment.to);
+        else path.bezierCurveTo(...segment.first, ...segment.second, ...segment.to);
+      }
+      path.closePath();
+    }
+    paths.set(outline, path);
+  }
+  context.save();
+  context.translate(x, y);
+  context.scale(width / outline.width, height / outline.height);
+  context.fillStyle = "#000";
+  context.fill(path, "nonzero");
+  context.restore();
 }
 
 function makeCanvas(width: number, height: number) {
@@ -190,7 +242,8 @@ function inkBox(ink: ArrayLike<number>, stride: number, full: number, region: Ma
 type Measured = Omit<MeasuredGlyph, "spec">;
 
 function blank(bitmap = makeCanvas(1, 1), at: MarkBox = { x: 0, y: 0, width: 1, height: 1 }): Measured {
-  return { density: 0, aspect: 1, bitmap, box: { ...at, width: 1, height: 1 } };
+  return { density: 0, aspect: 1, bitmap, box: { ...at, width: 1, height: 1 },
+    outline: { width: 1, height: 1, contours: [] } };
 }
 
 /**
@@ -241,83 +294,36 @@ function measure(canvas: HTMLCanvasElement, vector?: GlyphSpec["vector"]): Measu
   }
   maskContext.putImageData(output, 0, 0);
 
+  const transform = vector ? {
+    scaleX: width / vector.width, scaleY: height / vector.height,
+    offsetX: -box.x, offsetY: -box.y,
+  } : undefined;
+  const alpha = new Uint8ClampedArray(box.width * box.height);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = output.data[i * 4 + 3];
+  const outline: GlyphOutline = vector ? {
+    width: box.width, height: box.height,
+    contours: mapContours(vectorContours(vector.path), ([x, y]) => [
+      x * transform!.scaleX + transform!.offsetX, y * transform!.scaleY + transform!.offsetY,
+    ]),
+  } : unpackOutline(traceGlyph(alpha, box.width, box.height));
   return {
-    density: box.density,
+    density: vector ? box.density : outlineDensity(outline),
     aspect: box.width / box.height,
     bitmap: mask,
     box: { x: 0, y: 0, width: box.width, height: box.height },
-    ...(vector ? { vectorTransform: {
-      scaleX: width / vector.width, scaleY: height / vector.height,
-      offsetX: -box.x, offsetY: -box.y,
-    } } : {}),
-  };
-}
-
-type Sheet = {
-  /** The sheet as an ink mask, shared by every mark on it. */
-  mask: HTMLCanvasElement;
-  /** Ink per pixel, 0..255, kept to measure marks without reading the mask back. */
-  ink: Uint8ClampedArray;
-  width: number;
-};
-
-/**
- * Loads a sprite sheet and turns it into an ink mask.
- *
- * The pixels are read on a scratch canvas and the mask is written to a fresh
- * one: a canvas asked for `willReadFrequently` may be kept in software, and
- * this one is drawn from thousands of times a frame.
- */
-async function loadSheet(source: string): Promise<Sheet> {
-  const image = await loadImage(`${import.meta.env.BASE_URL}${source}`);
-  const width = image.naturalWidth;
-  const height = image.naturalHeight;
-
-  const scratch = makeCanvas(width, height).getContext("2d", { willReadFrequently: true });
-  if (!scratch) throw new Error("This browser did not give us a 2D canvas.");
-  scratch.drawImage(image, 0, 0);
-  const pixels = scratch.getImageData(0, 0, width, height);
-  const data = pixels.data;
-
-  const ink = new Uint8ClampedArray(width * height);
-  for (let index = 0; index < ink.length; index += 1) {
-    const offset = index * 4;
-    const luma = 0.2126 * data[offset] + 0.7152 * data[offset + 1] + 0.0722 * data[offset + 2];
-    ink[index] = (data[offset + 3] / 255) * (255 - luma);
-    data[offset] = 0;
-    data[offset + 1] = 0;
-    data[offset + 2] = 0;
-    data[offset + 3] = ink[index];
-  }
-
-  const mask = makeCanvas(width, height);
-  const context = mask.getContext("2d");
-  if (!context) throw new Error("This browser did not give us a 2D canvas.");
-  context.putImageData(pixels, 0, 0);
-  return { mask, ink, width };
-}
-
-/** Measures one mark on a sheet, by its box there. */
-function measureOnSheet(sheet: Sheet, [x, y, width, height]: [number, number, number, number]): Measured {
-  const box = inkBox(sheet.ink, sheet.width, 255, { x, y, width, height });
-  if (!box) return blank(sheet.mask, { x, y, width, height });
-  return {
-    density: box.density,
-    aspect: box.width / box.height,
-    bitmap: sheet.mask,
-    box: { x: box.x, y: box.y, width: box.width, height: box.height },
+    outline,
+    ...(transform ? { vectorTransform: transform } : {}),
   };
 }
 
 /**
- * Measured marks, keyed by id. The renderer asks it for a mask every cell, so
+ * Measured marks, keyed by id. The renderer asks for an outline every cell, so
  * lookups are synchronous; loading happens once, up front, in `ensure`.
  */
 export class GlyphLibrary {
   private generation = 0;
   private entries = new Map<string, MeasuredGlyph>();
   private signatures = new Map<string, string>();
-  private sheets = new Map<string, Promise<Sheet>>();
 
   get(id: string) {
     return this.entries.get(id);
@@ -333,22 +339,11 @@ export class GlyphLibrary {
     return entry ? { density: entry.density, aspect: entry.aspect } : undefined;
   };
 
-  private sheet(source: string) {
-    let sheet = this.sheets.get(source);
-    if (!sheet) {
-      sheet = loadSheet(source);
-      this.sheets.set(source, sheet);
-      // A failed load is not cached, so the next `ensure` tries again.
-      sheet.catch(() => this.sheets.delete(source));
-    }
-    return sheet;
-  }
-
   /**
    * Loads anything new or changed, and forgets marks no longer in the set.
    *
-   * Preset marks arrive a sheet at a time: each sheet is one request and one
-   * decode, and every mark on it is then measured off pixels already in hand.
+   * Preset marks arrive as lazy local vector modules, one per selected group.
+   * Parsing yields in small batches so cancellation and progress stay responsive.
    * Loose marks — uploads, typed characters, the shipped SVGs — load a few at
    * a time, because a folder of uploads one after another is a long wait.
    *
@@ -364,15 +359,10 @@ export class GlyphLibrary {
         this.signatures.delete(id);
       }
     }
-    const sources = new Set(specs.filter((spec) => spec.rect).map((spec) => spec.source));
-    for (const source of [...this.sheets.keys()]) {
-      if (!sources.has(source)) this.sheets.delete(source);
-    }
-
     const pending = specs
       .map((spec) => ({
         spec,
-        signature: `${spec.kind}:${spec.font ?? ""}:${spec.source}:${spec.rect?.join(",") ?? ""}`,
+        signature: `${spec.kind}:${spec.font ?? ""}:${spec.source}:${spec.rect?.join(",") ?? ""}:${spec.vectorPack?.join(":") ?? ""}:${spec.vector?.path ?? ""}`,
       }))
       .filter(({ spec, signature }) => this.signatures.get(spec.id) !== signature);
     if (pending.length === 0) return;
@@ -386,23 +376,31 @@ export class GlyphLibrary {
       onProgress?.(done, pending.length);
     };
 
-    const bySheet = new Map<string, typeof pending>();
+    const byPack = new Map<string, typeof pending>();
     const loose: typeof pending = [];
     for (const entry of pending) {
-      if (!entry.spec.rect) {
+      if (!entry.spec.vectorPack) {
         loose.push(entry);
         continue;
       }
-      const group = bySheet.get(entry.spec.source);
+      const key = entry.spec.vectorPack[0];
+      const group = byPack.get(key);
       if (group) group.push(entry);
-      else bySheet.set(entry.spec.source, [entry]);
+      else byPack.set(key, [entry]);
     }
 
-    const sheetWork = [...bySheet].map(async ([source, group]) => {
-      const sheet = await this.sheet(source);
-      for (const { spec, signature } of group) {
+    const packWork = [...byPack].map(async ([key, group]) => {
+      const load = packs[`../preset-vectors/${key}.ts`];
+      if (!load) throw new Error(`Missing shipped vector group: ${key}.`);
+      const { default: packed } = await load();
+      for (const [index, { spec, signature }] of group.entries()) {
         if (generation !== this.generation) return;
-        settle(spec, signature, measureOnSheet(sheet, spec.rect!));
+        const data = packed[spec.vectorPack![1]];
+        if (!data) throw new Error(`Missing shipped vector: ${spec.id}.`);
+        const [width, height, density] = data;
+        settle(spec, signature, { density, aspect: width / height,
+          box: { x: 0, y: 0, width, height }, outline: unpackOutline(data) });
+        if (index % 64 === 63) await new Promise(resolve => setTimeout(resolve, 0));
       }
     });
 
@@ -419,7 +417,7 @@ export class GlyphLibrary {
     };
 
     await Promise.all([
-      ...sheetWork,
+      ...packWork,
       ...Array.from({ length: Math.min(concurrency, loose.length) }, worker),
     ]);
   }

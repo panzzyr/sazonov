@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -225,21 +225,24 @@ test("glyph art is nested under /glyph-art/ with its preset marks", async () => 
 
   await stat(path.join(output, "glyph-art/support/index.html"));
 
-  // The preset sheets are the one thing loaded after the bundle. Missing them
-  // does not fail a build or a unit test — it fails silently in production,
-  // with every preset printing nothing.
-  const module = await readFile(
-    path.resolve("apps/glyph-art/src/generatedPresets.ts"),
-    "utf8",
-  );
-  const sources = [...module.matchAll(/"(presets\/[^"]+\.webp)"/g)].map((match) => match[1]);
-  const sets = [...module.matchAll(/^ {4}id: "([^"]+)"/gm)].length;
-  assert.ok(sets >= 4, `only ${sets} preset sets are declared`);
-  assert.ok(sources.length >= sets, `only ${sources.length} preset sheets are declared`);
-  for (const source of sources) {
-    const info = await stat(path.join(output, "glyph-art", source));
-    assert.ok(info.size > 0, source);
+  // Each trusted lazy vector module must survive the nested deployment, and
+  // the application must reference it. No duplicate raster payload is shipped.
+  const assets = path.join(output, "glyph-art/assets");
+  const names = await readdir(assets);
+  const groups = (await readdir("apps/glyph-art/src/preset-vectors")).filter(name => name.endsWith(".ts"));
+  assert.equal(groups.length, 27, "incomplete source vector catalogue");
+  assert.equal(names.filter(name => name.startsWith("glyph-vectors-")).length, groups.length);
+  const script = /src="(\/glyph-art\/assets\/[^\"]+\.js)"/.exec(html)?.[1];
+  assert.ok(script, "no glyph art entry script");
+  const core = await readFile(path.join(output, script.slice(1)), "utf8");
+  for (const group of groups) {
+    const pattern = new RegExp(`^glyph-vectors-${group.slice(0, -3)}-[\\w-]{8}\\.js$`);
+    const name = names.find(name => pattern.test(name));
+    assert.ok(name, `missing vector module: ${group}`);
+    assert.ok((await stat(path.join(assets, name))).size > 0, name);
+    assert.ok(core.includes(name), `unreferenced vector module: ${name}`);
   }
+  await assert.rejects(stat(path.join(output, "glyph-art/presets")), { code: "ENOENT" });
 });
 
 test("every page links printor at its deployed path", async () => {

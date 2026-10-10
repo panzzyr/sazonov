@@ -8,10 +8,17 @@ afterEach(() => vi.unstubAllGlobals());
 describe("canvas loop propagation", () => {
   it("passes the still period all the way to the stamp pass, not just the SVG placements", () => {
     const stamped: string[] = [];
+    vi.stubGlobal("Path2D", class {
+      id = "";
+      moveTo(x: number) { this.id = settings.glyphs[x].id; }
+      lineTo() {} bezierCurveTo() {} closePath() {}
+    });
     const canvas = () => ({
       width: 0, height: 0,
       getContext: () => ({
         setTransform() {}, clearRect() {}, fillRect() {},
+        save() {}, restore() {}, translate() {}, scale() {},
+        fill(path: { id: string }) { stamped.push(path.id); },
         drawImage(source: { glyphId?: string }) {
           if (source.glyphId) stamped.push(source.glyphId);
         },
@@ -22,10 +29,11 @@ describe("canvas loop propagation", () => {
     settings.targetFps = 30; settings.stillFrames = 120;
     settings.symbolMotion = { mode: "scatter", loop: true, amount: 10, interval: 250 };
     settings.bands = [{ glyphs: settings.glyphs.map(glyph => glyph.id), size: 0.9 }];
-    const measured = new Map(settings.glyphs.map(spec => [spec.id, {
+    const measured = new Map(settings.glyphs.map((spec, index) => [spec.id, {
       spec, density: 0.5, aspect: 1,
       bitmap: { glyphId: spec.id, width: 30, height: 30 } as unknown as HTMLCanvasElement,
       box: { x: 0, y: 0, width: 30, height: 30 },
+      outline: { width: 30, height: 30, contours: [{ start: [index, 0], segments: [] }] },
     } satisfies MeasuredGlyph]));
     const library = { get: (id: string) => measured.get(id), metrics: (id: string) => measured.get(id) } as GlyphLibrary;
     const field = { gridW: 30, gridH: 40, tone: new Float32Array(1200).fill(0.45), color: new Uint8ClampedArray(3600) };

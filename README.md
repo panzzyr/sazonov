@@ -57,6 +57,10 @@ independently of layout jitter and spatial-step boundaries. Projects and share
 links store the symbol seed. The historical catalogue has a conservative quality
 screen; see [the shuffle and scan-screening notes](docs/glyph-art-shuffle.md).
 
+All 61,127 shipped scans are pre-vectorized. Preview, PNG, MP4 and SVG share
+the same contours; uploads and text are traced once on insertion. No new
+dependencies. See [vector library regeneration and budgets](docs/glyph-art-vectors.md).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for editing guidance and
 [`docs/publishing/README.md`](docs/publishing/README.md) for GitHub,
 Cloudflare Pages, and DNS setup.

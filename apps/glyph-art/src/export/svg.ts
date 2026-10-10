@@ -3,9 +3,8 @@
  *
  * Both modes end up here, and they arrive as different kinds of drawing.
  *
- * Bitmap marks — scans, type, uploaded files — are traced from measured alpha
- * masks. Shipped reaction icons and counters instead retain their authored
- * curves: the preview's rasterization is never their export source.
+ * All glyph marks arrive as prepared outlines, also used by PNG and MP4.
+ * Shipped reaction icons and counters retain their authored curves.
  * A halftone frame is not traced at all, because it was never a
  * bitmap: the dots are solved from area as circles, ellipses and polygons, so
  * the SVG can carry the same geometry the canvas filled, exactly.
@@ -32,52 +31,8 @@
 
 import { cellGeometry, glyphPlacements, type RenderOptions } from "../engine/render";
 import { solveRamp } from "../engine/ramp";
-import { fitContour, traceContours, type Point, type Segment } from "./trace";
-import { drawGlyph, type MeasuredGlyph } from "../engine/glyphLibrary";
-import { mapContours, vectorContours } from "../engine/vector";
-
-/**
- * How far an outline may stray from the mask, as a share of the mark's size.
- *
- * Relative, not absolute, because that is how the error is seen: half a pixel
- * off a forty-pixel mark is nothing, and half a pixel off a ten-pixel dot is
- * the difference between a dot and an octagon. The floor and the ceiling are
- * in pixels of the finished frame — under the floor there is nothing left to
- * resolve, and over the ceiling the shape stops being the shape.
- */
-const toleranceOfSize = 0.02;
-const minTolerance = 0.06;
-const maxTolerance = 0.5;
-
-/**
- * Mask pixels traced per pixel the impression prints at.
- *
- * Above the printed size, so the ragged edge of a scan survives — the lattice
- * is what the fitted curve has to work from, and it cannot describe an edge
- * finer than its own step. Tracing costs nothing in the file: a curve covers
- * as many traced points as it likes.
- */
-const traceDetail = 2.5;
-
-/** No mark is traced coarser than this, however small it prints. */
-const minTraceWidth = 48;
-
-/** Ink smaller than a pixel of the page is fringe, not a mark. */
-const minContourArea = 1;
-
-type Fitted = { start: Point; segments: Segment[] };
-type Outline = { width: number; height: number; contours: Fitted[] };
-
-/** Twice the signed area, positive for an outer contour. */
-function doubleArea(points: Point[]) {
-  let sum = 0;
-  for (let index = 0; index < points.length; index += 1) {
-    const [x1, y1] = points[index];
-    const [x2, y2] = points[(index + 1) % points.length];
-    sum += x1 * y2 - x2 * y1;
-  }
-  return sum;
-}
+import type { Point } from "./trace";
+import { glyphOutline } from "../engine/glyphLibrary";
 import {
   dotOutline,
   plateColors,
@@ -100,79 +55,6 @@ function xml(value: string) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
-
-/**
- * The outline of one mark, in the pixels it is traced at.
- *
- * Not the mask's own pixels: an impression prints at thirty-odd, and every
- * lattice step finer than that is detail the page cannot show but the file
- * still pays for — once per impression, now that the geometry is written out
- * rather than shared. So the mask is resampled to twice the printed size,
- * which keeps the ragged edge of a scan and drops the wobble underneath it,
- * and then simplified to a third of a page pixel.
- *
- * Sizes are bucketed, so a band — where every impression is the same size —
- * traces once and the rest is arithmetic.
- */
-function markOutline(glyph: MeasuredGlyph, printedWidth: number, cache: Map<string, Outline>) {
-  const { box } = glyph;
-  if (glyph.spec.vector) {
-    const id = `${glyph.spec.id}:vector`;
-    const hit = cache.get(id);
-    if (hit) return hit;
-    const vector = glyph.spec.vector;
-    const transform = glyph.vectorTransform ?? {
-      scaleX: glyph.bitmap.width / vector.width, scaleY: glyph.bitmap.height / vector.height,
-      offsetX: -box.x, offsetY: -box.y,
-    };
-    const outline: Outline = {
-      width: box.width,
-      height: box.height,
-      // The measured bitmap's tight box is what the preview fits. Use that
-      // same coordinate frame for the original curves, with no raster trace.
-      contours: mapContours(vectorContours(vector.path), ([x, y]) => [
-        x * transform.scaleX + transform.offsetX,
-        y * transform.scaleY + transform.offsetY,
-      ]),
-    };
-    cache.set(id, outline);
-    return outline;
-  }
-  const wanted = Math.max(minTraceWidth, Math.round((printedWidth * traceDetail) / 8) * 8);
-  const traceWidth = Math.min(box.width, wanted);
-  const id = `${glyph.spec.id}:${traceWidth}`;
-  const hit = cache.get(id);
-  if (hit) return hit;
-
-  const traceHeight = Math.max(1, Math.round((box.height * traceWidth) / box.width));
-  const scratch = document.createElement("canvas");
-  scratch.width = traceWidth;
-  scratch.height = traceHeight;
-  const context = scratch.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("This browser did not give us a 2D canvas.");
-  context.imageSmoothingQuality = "high";
-  drawGlyph(context, glyph, 0, 0, traceWidth, traceHeight);
-
-  const pixels = context.getImageData(0, 0, traceWidth, traceHeight).data;
-  const alpha = new Uint8ClampedArray(traceWidth * traceHeight);
-  for (let index = 0; index < alpha.length; index += 1) alpha[index] = pixels[index * 4 + 3];
-
-  const perPagePixel = traceWidth / Math.max(1, printedWidth);
-  const smallest = minContourArea * perPagePixel * perPagePixel * 2;
-  const tolerance = Math.max(
-    minTolerance,
-    Math.min(maxTolerance, toleranceOfSize * printedWidth),
-  ) * perPagePixel;
-  const outline: Outline = {
-    width: traceWidth,
-    height: traceHeight,
-    contours: traceContours(alpha, traceWidth, traceHeight)
-      .filter((contour) => Math.abs(doubleArea(contour)) >= smallest)
-      .map((contour) => fitContour(contour, tolerance)),
-  };
-  cache.set(id, outline);
-  return outline;
 }
 
 function rgb(red: number, green: number, blue: number, invert: boolean) {
@@ -209,8 +91,7 @@ function svgDocument(size: Frame, title: string, description: string, body: stri
 /**
  * The glyph frame: every impression written out, gathered by ink.
  *
- * Bitmap outlines are traced once per printed size; native contours are read
- * directly. Both are carried into place — scaled to the impression's box and
+ * Prepared outlines are carried into place — scaled to the impression's box and
  * rotated about its centre — because a shared definition would mean the
  * `<use>` that editors refuse.
  *
@@ -225,16 +106,15 @@ function glyphBody(options: SvgOptions) {
   const ramp = options.ramp ?? solveRamp(settings, library.metrics);
   const geometry = cellGeometry(settings, size.width, field.gridW, size.height, field.gridH);
   const paper = settings.invert ? "#000000" : "#ffffff";
-  const cache = new Map<string, Outline>();
   const inks = new Map<string, string[]>();
 
   for (const placement of glyphPlacements({ ...options, ink: "flat", ramp }, ramp, geometry)) {
     const { glyph, width, height, centreX, centreY, rotation } = placement;
-    const outline = markOutline(glyph, width, cache);
+    const outline = glyphOutline(glyph);
     if (outline.contours.length === 0) continue;
-    // Native contours must not inherit the coarse quantization of fitted scans,
-    // especially in dense grids where an entire counter can be just a few px.
-    const digits = glyph.spec.vector ? 3 : 1;
+    // Every output shares complete outlines, including in dense grids where
+    // a counter can occupy just a few pixels. Avoid coarse export quantization.
+    const digits = 3;
     const n = (value: number) => decimal(value, digits);
 
     // The impression's own transform, applied to the points rather than
@@ -261,7 +141,7 @@ function glyphBody(options: SvgOptions) {
     const data = outline.contours.map(({ start, segments }) => {
       const head = place(start);
       // Measure every relative step from the written point to avoid cumulative
-      // rounding drift: scans use tenths, original vectors use thousandths.
+      // rounding drift; every outline keeps thousandth-pixel export precision.
       let written: Point = [Number(n(head[0])), Number(n(head[1]))];
       let run = `M${n(written[0])} ${n(written[1])}`;
       const step = (point: Point): Point => {
@@ -272,7 +152,7 @@ function glyphBody(options: SvgOptions) {
       for (const segment of segments) {
         const end = step(segment.to);
         if (segment.kind === "line") {
-          if (!glyph.spec.vector && end[0] === 0 && end[1] === 0) continue;
+          if (end[0] === 0 && end[1] === 0) continue;
           run += `l${n(end[0])} ${n(end[1])}`;
         } else {
           const first = step(segment.first);
@@ -414,7 +294,7 @@ export function exportSvg(options: SvgOptions, title: string) {
   return new Blob([svgDocument(
     size,
     title,
-    "Generated locally by glyph art. Native vectors retain original contours; bitmap marks are traced into editable paths.",
+    "Generated locally by glyph art. Prepared vector outlines are shared with PNG and MP4; native vectors retain original contours.",
     glyphBody(options),
   )], { type: "image/svg+xml" });
 }

@@ -35,6 +35,10 @@ export default defineConfig({
     target: "es2022",
     sourcemap: false,
     chunkSizeWarningLimit: 320,
+    rollupOptions: { output: {
+      chunkFileNames: (chunk) => chunk.facadeModuleId?.includes("/preset-vectors/")
+        ? "assets/glyph-vectors-[name]-[hash].js" : "assets/[name]-[hash].js",
+    } },
   },
   server: {
     host: "127.0.0.1",

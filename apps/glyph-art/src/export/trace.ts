@@ -38,9 +38,9 @@ export const inkThreshold = 32;
  * holes counter-clockwise, so a `nonzero` fill keeps the holes open and lets
  * overlapping marks merge.
  */
-export function traceContours(alpha: Uint8ClampedArray, width: number, height: number) {
+export function traceContours(alpha: Uint8ClampedArray, width: number, height: number, threshold = inkThreshold) {
   const ink = (x: number, y: number) =>
-    x >= 0 && y >= 0 && x < width && y < height && alpha[y * width + x] >= inkThreshold;
+    x >= 0 && y >= 0 && x < width && y < height && alpha[y * width + x] >= threshold;
 
   // Every boundary edge, keyed by where it starts. A lattice corner can carry
   // two of them where two contours touch diagonally; either continuation
@@ -89,6 +89,62 @@ export function traceContours(alpha: Uint8ClampedArray, width: number, height: n
     }
   }
 
+  return contours;
+}
+
+/**
+ * Subpixel iso-contours through alpha samples at pixel centres. Interpolating
+ * the half-ink boundary avoids baking an 80px scan's staircase into its vector.
+ * The transparent one-sample border closes even fully inked edge pixels.
+ */
+export function traceIsolines(alpha: Uint8ClampedArray, width: number, height: number, threshold: number) {
+  const value = (x: number, y: number) => x < 0 || y < 0 || x >= width || y >= height ? 0 : alpha[y * width + x];
+  const key = (x: number, y: number, vertical: number) => ((y + 1) * (width + 1) + x + 1) * 2 + vertical;
+  const nodes = new Map<number, Point>();
+  const links = new Map<number, number>();
+  // Directed edges keep ink on the right: outer rings clockwise, holes reverse.
+  const cases: number[][][] = [[], [[0, 3]], [[1, 0]], [[1, 3]], [[2, 1]],
+    [[0, 3], [2, 1]], [[2, 0]], [[2, 3]], [[3, 2]], [[0, 2]],
+    [[1, 0], [3, 2]], [[1, 2]], [[3, 1]], [[0, 1]], [[3, 0]], []];
+  for (let y = -1; y < height; y++) for (let x = -1; x < width; x++) {
+    const a = value(x, y), b = value(x + 1, y), c = value(x + 1, y + 1), d = value(x, y + 1);
+    const code = Number(a >= threshold) + 2 * Number(b >= threshold)
+      + 4 * Number(c >= threshold) + 8 * Number(d >= threshold);
+    if (code === 0 || code === 15) continue;
+    const ids = [key(x, y, 0), key(x + 1, y, 1), key(x, y + 1, 0), key(x, y, 1)];
+    const edge = (index: number) => {
+      const id = ids[index];
+      if (!nodes.has(id)) {
+        const mix = (from: number, to: number) => (threshold - from) / (to - from);
+        const point: Point = index === 0 ? [x + 0.5 + mix(a, b), y + 0.5]
+          : index === 1 ? [x + 1.5, y + 0.5 + mix(b, c)]
+          : index === 2 ? [x + 0.5 + mix(d, c), y + 1.5]
+          : [x + 0.5, y + 0.5 + mix(a, d)];
+        nodes.set(id, point);
+      }
+      return id;
+    };
+    const joined = (a + b + c + d) / 4 >= threshold;
+    const pairs = joined && code === 5 ? [[0, 1], [2, 3]]
+      : joined && code === 10 ? [[3, 0], [1, 2]] : cases[code];
+    for (const [from, to] of pairs) links.set(edge(from), edge(to));
+  }
+  const contours: Point[][] = [];
+  for (const start of [...links.keys()]) {
+    if (!links.has(start)) continue;
+    const contour: Point[] = [];
+    let current = start;
+    do {
+      const point = nodes.get(current)!;
+      const previous = contour.at(-1);
+      if (!previous || point[0] !== previous[0] || point[1] !== previous[1]) contour.push(point);
+      const next = links.get(current);
+      links.delete(current);
+      if (next === undefined) throw new Error("Open glyph contour.");
+      current = next;
+    } while (current !== start);
+    if (contour.length >= 3) contours.push(contour);
+  }
   return contours;
 }
 
@@ -410,6 +466,10 @@ function easeRun(points: Point[]): Point[] {
 export function fitContour(points: Point[], tolerance: number) {
   const segments: Segment[] = [];
   if (points.length < 3) return { start: points[0], segments };
+  // Two-point fitting runs have no room for a bend: splitting a tiny closed
+  // diamond in half would turn it into two opposite lines and erase its area.
+  if (points.length <= 4) return { start: points[0], segments: points.slice(1)
+    .map((to): Segment => ({ kind: "line", to })) };
 
   const corners = findCorners(points);
   // With no corner anywhere the loop is cut in two, because a run has to start

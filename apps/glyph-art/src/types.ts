@@ -55,6 +55,8 @@ export type GlyphSpec = {
    * Like `source`, it is taken from the build, never from a project file.
    */
   rect?: [number, number, number, number];
+  /** Trusted lazy vector catalogue coordinates, restored by preset identity. */
+  vectorPack?: [group: string, index: number];
   /** Trusted shipped outlines. SVG exports keep these curves without tracing. */
   vector?: { width: number; height: number; path: string };
 };

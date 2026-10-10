@@ -20,8 +20,8 @@ its own section near the end.
 
 It runs entirely in your browser. Files you open stay on your machine — the page
 is not allowed to open a connection of its own. The only thing it ever loads is
-its own preset marks, as images from the same address, and only once you pick a
-preset.
+its own preset marks, as lazy vector data from the same address, and only once
+you pick a preset.
 
 If something will not open, the [browser check](/glyph-art/support/) reports
 which capabilities you have.
@@ -250,9 +250,10 @@ levels, with the remaining marks split between fire, the owner's press F trace
 and the separate eye.
 Counters use Roboto Medium contours; no installed font is needed. All these
 marks export as native SVG paths, without text, emoji, external fonts or embedded
-images. Historical scans continue to export as traced curves.
+images. Historical and Church Slavonic scans are vectorized ahead of time too;
+preview, PNG, MP4 and SVG draw the same prepared outlines.
 
-All steps load their local sheets the first time you enable the gradient, so
+All selected steps load their local vector data the first time you enable the gradient, so
 this takes longer than loading a single era. Export waits until the marks are
 ready. `save`, `share`, undo and redo preserve gradient settings. SVG still exports
 the current playhead frame; PNG and MP4 retain their existing sequence behaviour.
@@ -431,10 +432,13 @@ or the ruling, the angle and the separation.
 is always the flat result. The frame is never resized on the way out.
 
 `svg` writes the current frame as editable vector paths, and it means something
-different in each mode. In glyph mode it traces every mark from the same
-measured mask used by the preview, so scanned bitmap marks become outlines too.
-Their fine antialiased fringe becomes a hard edge; use PNG when that fringe
-matters.
+different in each mode. In glyph mode it uses the same prepared contours as
+preview, PNG and MP4, without tracing again at export time. All 61,127 historical
+and curated scans are vectorized during library generation. Typed characters
+and uploaded marks are traced once when added; native reactions keep their
+original curves. Half-ink boundaries remove soft scan fringes, but cannot
+recover detail missing from an original. Raster outputs antialias the vectors
+at their actual output resolution instead of enlarging low-resolution sprites.
 
 The file is plain filled paths. Nothing in it is a reference to be resolved —
 no shared symbols, no mask — because a browser resolves those and a drawing

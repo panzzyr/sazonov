@@ -84,6 +84,7 @@ function unpackGroup(data: PresetGroupData): GlyphSpec[] {
     kind: "preset",
     source: data.sheets[place.sheet][0],
     rect: [place.x, place.y, sizes[index][0], sizes[index][1]],
+    vectorPack: [data.id, index],
   }));
 }
 

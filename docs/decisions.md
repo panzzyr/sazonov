@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-10 — one vector source for every glyph output
+
+- **Decision:** Pre-trace all 61,127 committed scans into 27 lazy local vector modules. Draw cached Path2D outlines in Canvas/PNG/MP4 and use those same contours in SVG. Trace loose uploads and text once on insertion; keep original native reaction curves.
+- **Alternatives:** Trace again on each export, keep fixed-resolution sprite masks for raster output, or install a new tracing package.
+- **Reason:** The owner wants crisp raster output using the same symbols as SVG, with an independently reversible experiment and no unapproved dependencies. Subpixel half-ink tracing removes blurred scan fringes without blackening them.
+- **Consequences:** No dependencies or network APIs added. Stable ids, pools, projects and animation semantics remain; apparent tone may change because the source artwork is now hard-edged, with coverage measured from contours. Lazy data avoids adding the whole catalogue to startup JS; contour arrays and Path2D are prepared only for used symbols. The 300KB gzip application budget remains, while vector artwork gets 10MB raw / 4MB gzip per preset and 48MB raw / 16MB gzip total ceilings. Production omits original raster sheets but git retains them as reproducible generation inputs. SVG files can be larger than old printed-size-specific traces. Offline cache advances; regression checks regenerate all vectors and forbid bitmap decoding for preset render/export. See `docs/glyph-art-vectors.md`.
+
 ## 2026-10-10 — opt-in seamless scatter loops for fixed-grid stills
 
 - **Decision:** Add a persisted loop checkbox for scatter. Each active cell draws a seeded ring of 2–4 distinct positive-weight marks from its complete tone pool, then repeats an integer number of rotations over the actual sequence period. Independent phase offsets distribute switches, including the last-to-first seam.

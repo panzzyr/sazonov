@@ -182,10 +182,11 @@ export function Support() {
           <p>
             In glyph mode, SVG exports the current frame as editable vector paths.
             Digital reactions — fire, press F, views and counters — use their original
-            vector contours, never a retraced preview. Their raster copies only measure
-            density and draw the canvas. Bitmap scans and other rasterized marks are
-            traced from their measured masks; antialiased fringes become a hard contour,
-            while PNG remains the exact raster reference.
+            vector contours, never a retraced preview. Historical and Church Slavonic
+            scans are vectorized ahead of time; typed and uploaded marks are traced
+            once when added. Preview, PNG, MP4 and SVG all draw these same outlines.
+            Soft scan fringes become clean edges; vectorization cannot recover detail
+            missing from a low-resolution original.
           </p>
           <p>
             Grid animation is written through the same frame renderer as the preview.

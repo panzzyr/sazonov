@@ -5,10 +5,15 @@ import path from "node:path";
 const output = path.join(process.cwd(), "dist");
 const assets = path.join(output, "assets");
 let gzipTotal = 0;
+const groupBytes = new Map();
 
 for (const name of await readdir(assets)) {
   if (!/\.(?:js|css)$/.test(name)) continue;
-  gzipTotal += gzipSync(await readFile(path.join(assets, name)), { level: 9 }).byteLength;
+  const raw = await readFile(path.join(assets, name));
+  const gzip = gzipSync(raw, { level: 9 }).byteLength;
+  const vector = /^glyph-vectors-(.+)-[\w-]{8}\.js$/.exec(name);
+  if (vector) groupBytes.set(vector[1], { raw: raw.byteLength, gzip });
+  else gzipTotal += gzip;
 }
 
 // No shader, no texture library: this build should sit far under printor's
@@ -17,31 +22,13 @@ const limit = 300 * 1024;
 console.log(`glyph art JS + CSS: ${gzipTotal} bytes gzip`);
 if (gzipTotal > limit) throw new Error(`glyph art exceeds the ${limit}-byte gzip target.`);
 
-// The preset sheets are the one thing this tool loads off the network after
-// the bundle, and the only part of it that can grow without anybody noticing.
-//
-// Two ceilings, because they answer different questions. A preset's sheets are
-// fetched only when it is picked, so what a visitor actually downloads is *one
-// preset* — the sheets of all the groups it draws on, which for a foreign
-// preset is its era's Russian sheets as well as the foreign ones. That is the
-// number to watch when an era gains pages. The total is what the repository
-// and the deployment carry, and it is the one to watch when an era is added.
-//
-// The ceilings are set by eras that print every Russian mark they have — up to
-// seven thousand from one dense page. Growing them further is a decision about
-// what a visitor waits for, not a number to nudge until the build passes.
-const presetRoot = path.join(output, "presets");
-const perPresetLimit = 6 * 1024 * 1024;
-const totalLimit = 24 * 1024 * 1024;
-
-const groupBytes = new Map();
-for (const group of await readdir(presetRoot)) {
-  let bytes = 0;
-  for (const name of await readdir(path.join(presetRoot, group))) {
-    bytes += (await readFile(path.join(presetRoot, group, name))).byteLength;
-  }
-  groupBytes.set(group, bytes);
-}
+// Lazy vector data is artwork, not application code. Audit both uncompressed
+// hosting footprint and compressed transfer; the initial JS budget stays 300KB.
+// Supersedes the raster-sheet budgets (ADR 2026-10-10).
+const perPresetLimit = 10 * 1024 * 1024;
+const perPresetGzipLimit = 4 * 1024 * 1024;
+const totalLimit = 48 * 1024 * 1024;
+const totalGzipLimit = 16 * 1024 * 1024;
 
 // Which groups each preset draws on, read off the generated module rather than
 // imported, so this runs on a Node without TypeScript support.
@@ -60,20 +47,23 @@ if (presets.length === 0) throw new Error("glyph art's budget found no presets i
 presets.push(["church-slavonic-vedomosti", ["church-slavonic-vedomosti"]]);
 
 for (const [id, groups] of presets) {
-  const bytes = groups.reduce((sum, group) => {
-    if (!groupBytes.has(group)) throw new Error(`preset "${id}" draws on "${group}", which has no sheets.`);
-    return sum + groupBytes.get(group);
-  }, 0);
-  console.log(`  ${id.padEnd(34)} ${String(bytes).padStart(8)} bytes  ${groups.join(" + ")}`);
-  if (bytes > perPresetLimit) {
-    throw new Error(`preset "${id}" exceeds the ${perPresetLimit}-byte per-preset target.`);
+  const size = groups.reduce((sum, group) => {
+    if (!groupBytes.has(group)) throw new Error(`preset "${id}" draws on "${group}", which has no vectors.`);
+    const { raw, gzip } = groupBytes.get(group);
+    return { raw: sum.raw + raw, gzip: sum.gzip + gzip };
+  }, { raw: 0, gzip: 0 });
+  console.log(`  ${id.padEnd(34)} ${String(size.raw).padStart(8)} bytes; ${size.gzip} gzip`);
+  if (size.raw > perPresetLimit || size.gzip > perPresetGzipLimit) {
+    throw new Error(`preset "${id}" exceeds its raw or gzip artwork budget.`);
   }
 }
 
-const presetBytes = [...groupBytes.values()].reduce((sum, bytes) => sum + bytes, 0);
-console.log(`glyph art preset sheets: ${presetBytes} bytes across ${groupBytes.size} groups`);
-if (presetBytes > totalLimit) {
-  throw new Error(`the preset library exceeds the ${totalLimit}-byte total target.`);
+const presetBytes = [...groupBytes.values()].reduce((sum, size) => sum + size.raw, 0);
+const presetGzip = [...groupBytes.values()].reduce((sum, size) => sum + size.gzip, 0);
+console.log(`glyph art vectors: ${presetBytes} bytes; ${presetGzip} gzip across ${groupBytes.size} groups`);
+if (groupBytes.size !== 27) throw new Error("Incomplete vector catalogue; update this guard when adding a group.");
+if (presetBytes > totalLimit || presetGzip > totalGzipLimit) {
+  throw new Error("the vector library exceeds its raw or gzip artwork budget.");
 }
 
 const html = await readFile(path.join(output, "index.html"), "utf8");
