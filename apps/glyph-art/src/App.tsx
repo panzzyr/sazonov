@@ -374,6 +374,7 @@ export function App() {
         field,
         library,
         frame,
+        loopFrames: media?.kind === "image" ? totalFrames : undefined,
         ink: "flat",
         ramp,
         size: { width: frameWidth, height: frameHeight },
@@ -384,7 +385,7 @@ export function App() {
     // `raster` is a fresh object every render, so the frame enters as two
     // numbers; depending on the object would redraw the screen on every
     // keystroke anywhere in the interface.
-  }, [field, fieldReady, renderSettings, frame, frameWidth, frameHeight, library, libraryVersion, ramp, marksReady]);
+  }, [field, fieldReady, renderSettings, frame, frameWidth, frameHeight, library, libraryVersion, ramp, marksReady, media?.kind, totalFrames]);
 
   useEffect(() => {
     if (frame < totalFrames) return;
@@ -537,7 +538,9 @@ export function App() {
       if (format === "svg") {
         if (!field || !fieldReady || frameWidth === 0) throw new Error("The current frame is not ready yet.");
         const blob = exportSvg(
-          { settings: renderSettings, field, library, frame, ramp, size: { width: frameWidth, height: frameHeight } },
+          { settings: renderSettings, field, library, frame, ramp,
+            loopFrames: exportSource.kind === "image" ? totalFrames : undefined,
+            size: { width: frameWidth, height: frameHeight } },
           `${stem} — glyph art`,
         );
         setBusy({ label, done: 1, total: 1 });
@@ -1281,6 +1284,18 @@ export function App() {
                 <SymbolHold value={settings.hold} onChange={(value) => setGlobal("hold", value)}
                   showFinite={settings.symbolMotion.mode === "cycle"} />
                 {settings.symbolMotion.mode === "scatter" && settings.hold !== "infinite" && <>
+                  <label className="check">
+                    <input type="checkbox" checked={settings.symbolMotion.loop}
+                      disabled={media?.kind !== "image" || settings.animation.enabled}
+                      onChange={(event) => setGlobal("symbolMotion", { ...settings.symbolMotion, loop: event.target.checked })} />
+                    seamless loop
+                  </label>
+                  {settings.symbolMotion.loop && <p className="control-hint">
+                    {media?.kind === "image" && !settings.animation.enabled
+                      ? "Each cell follows its own closed ring of 2–4 marks. Sparse motion leaves some cells still. "
+                        + "The last-to-first switch is distributed like any other frame; no end-frame reset."
+                      : "Loop is inactive: use a still image with grid animation off. Ordinary scatter is preserved."}
+                  </p>}
                   <SliderControl label="changes" value={settings.symbolMotion.amount} min={1} max={100} unit="%"
                     onChange={(amount) => setGlobal("symbolMotion", { ...settings.symbolMotion, amount }, "motion.amount")} />
                   <SliderControl label="change interval" value={settings.symbolMotion.interval} min={16} max={10000} unit=" ms"
@@ -1327,7 +1342,9 @@ export function App() {
                         || settings.stillFrames === seamless}
                     >
                       {settings.symbolMotion.mode === "scatter" && settings.hold !== "infinite"
-                        ? "scatter has no exact loop"
+                        ? settings.symbolMotion.loop && media?.kind === "image" && !settings.animation.enabled
+                          ? `scatter loop: ${settings.stillFrames} frames`
+                          : "scatter has no exact loop"
                         : `${settings.hold === "infinite" ? "static symbols" : "seamless loop"}: ${seamless}`}
                     </button>
                   </div>

@@ -25,17 +25,47 @@ function placements(settings: Settings, frame = 0) {
   const byId = new Map(glyphs.map((glyph) => [glyph.spec.id, glyph]));
   const library = { get: (id: string) => byId.get(id), metrics: (id: string) => byId.get(id) } as GlyphLibrary;
   const field = { gridW: 30, gridH: 40, tone: new Float32Array(1200).fill(0.45), color: new Uint8ClampedArray(3600) };
-  const options = { settings, library, field, frame, ink: "flat" as const, size: { width: 900, height: 1200 } };
+  const options = { settings, library, field, frame, loopFrames: settings.stillFrames,
+    ink: "flat" as const, size: { width: 900, height: 1200 } };
   const draw = [...glyphPlacements(options, solveRamp(settings, library.metrics), cellGeometry(settings, 900, 30))];
   return { draw, options };
 }
 
 describe("symbol-only shuffle", () => {
+  it("keeps spatial-gradient tone pools and boundaries periodic too", () => {
+    const settings = initialSettings();
+    settings.targetFps = 30; settings.stillFrames = 120;
+    settings.gradient = { enabled: true, direction: "right", blend: 0.4,
+      steps: ["great-patriotic", "digital-reactions"] };
+    settings.symbolMotion = { mode: "scatter", loop: true, amount: 10, interval: 250 };
+    const first = placements(settings, 0).draw;
+    expect(placements(settings, 120).draw).toEqual(first);
+    expect(placements(settings, 60).draw).not.toEqual(first);
+    expect(placements({ ...settings, symbolMotion: { ...settings.symbolMotion, loop: false } }, 0).draw).toEqual(first);
+  });
+  it("closes native SVG and canvas placement loops without a global last-to-first reset", async () => {
+    const settings = initialSettings();
+    applyPreset(settings, findPreset("digital-reactions")!);
+    settings.targetFps = 30; settings.stillFrames = 120;
+    settings.symbolMotion = { mode: "scatter", loop: true, amount: 10, interval: 250 };
+    const first = placements(settings, 0);
+    const end = placements(settings, 119);
+    const middle = placements(settings, 60);
+    const seamChanges = end.draw.filter((mark, i) => mark.glyph.spec.id !== first.draw[i].glyph.spec.id);
+    expect(seamChanges.length).toBeLessThan(first.draw.length * 0.04);
+    expect(middle.draw).not.toEqual(first.draw);
+    for (const frame of [120, 240, 120000]) expect(placements(settings, frame).draw).toEqual(first.draw);
+    const svg = await exportSvg(first.options, "loop").text();
+    expect(await exportSvg(placements(settings, 120).options, "loop").text()).toBe(svg);
+    expect(await exportSvg(middle.options, "loop").text()).not.toBe(svg);
+    expect(placements({ ...settings, hold: "infinite" }, 60).draw).toEqual(first.draw);
+    expect(placements({ ...settings, glyphSeed: 77 }, 60).draw).not.toEqual(middle.draw);
+  });
   it("scatter changes only a sparse subset in canvas and SVG placement, with reproducible seeks", async () => {
     const settings = initialSettings();
     applyPreset(settings, findPreset("digital-reactions")!);
     settings.targetFps = 30;
-    settings.symbolMotion = { mode: "scatter", amount: 20, interval: 100 };
+    settings.symbolMotion = { mode: "scatter", loop: false, amount: 20, interval: 100 };
     const first = placements(settings, 0);
     const next = placements(settings, 3);
     const changed = next.draw.filter((mark, i) => mark.glyph.spec.id !== first.draw[i].glyph.spec.id);

@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-10 — opt-in seamless scatter loops for fixed-grid stills
+
+- **Decision:** Add a persisted loop checkbox for scatter. Each active cell draws a seeded ring of 2–4 distinct positive-weight marks from its complete tone pool, then repeats an integer number of rotations over the actual sequence period. Independent phase offsets distribute switches, including the last-to-first seam.
+- **Alternatives:** Reset every cell at the end (visible flash), duplicate the first frame (pause), require cycling the full thousands-mark pool (impractical durations), or crossfade pixels (loses original-vector semantics).
+- **Reason:** The owner needs repeating scatter animation on a static image with a fixed grid, and explicitly welcomes static cells at sparse update rates.
+- **Consequences:** Stochastic rounding makes the percentage an average event budget; below two changes per cell some cells remain still. Active rings change marks without immediate repeats, honour zero-weight exclusions, and preserve frame-zero picks. Preview, PNG, MP4 and SVG receive the actual still period and reproduce identical placement. No mutable histories, closing batch, end-frame duplication or dependencies. Infinite hold still overrides motion. Video and animated grids deliberately fall back to ordinary scatter and show the loop as inactive. Legacy projects keep loop off; JSON, links and undo preserve the flag.
+
 ## 2026-10-10 — scatter symbol animation with independent renewal clocks
 
 - **Decision:** Add optional scatter / matrix motion, with average eligible-cell update percentage and a millisecond interval. Give each cell one seeded random event per interval / fraction block, rehashing the event location in every block.

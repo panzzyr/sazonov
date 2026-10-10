@@ -1,6 +1,7 @@
 import { strToU8, zipSync, type Zippable } from "fflate";
 import { renderSequence, sequenceSize, type SequenceOptions } from "./renderSequence";
 import { plateNames } from "../engine/halftone";
+import { isScatterLoop } from "../engine/symbolMotion";
 import type { ExportInk } from "../types";
 
 const inkNotes: Record<ExportInk, string> = {
@@ -110,6 +111,7 @@ export async function exportPngSequence(options: PngExportOptions) {
       `symbol motion: ${settings.hold === "infinite" ? "frozen" : settings.symbolMotion.mode}`,
       ...(settings.symbolMotion.mode === "scatter" ? [
         `changes: ${settings.symbolMotion.amount}% on average per ${settings.symbolMotion.interval} ms`,
+        `seamless scatter loop: ${isScatterLoop(settings, options.source.kind === "image" ? settings.stillFrames : undefined) ? "yes" : "no"}`,
       ] : [`hold: ${settings.hold} frames`]),
     ];
   const readme = [

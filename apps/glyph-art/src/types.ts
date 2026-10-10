@@ -124,6 +124,8 @@ export type GridInterpolation = "linear" | "ease-in-out" | "hold";
 export type SymbolHold = number | "infinite";
 export type SymbolMotion = {
   mode: "cycle" | "scatter";
+  /** Periodic scatter for a still source on an unchanged grid. */
+  loop: boolean;
   /** Average percentage of eligible cells scheduled per interval. */
   amount: number;
   /** Milliseconds over which those updates are distributed. */
@@ -325,7 +327,7 @@ export const defaultSettings: Settings = {
   stillFrames: 1,
   outputWidth: 2048,
   hold: 2,
-  symbolMotion: { mode: "cycle", amount: 10, interval: 250 },
+  symbolMotion: { mode: "cycle", loop: false, amount: 10, interval: 250 },
   animation: {
     enabled: false,
     interpolation: "ease-in-out",

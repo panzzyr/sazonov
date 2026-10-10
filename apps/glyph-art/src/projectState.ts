@@ -276,6 +276,7 @@ export function parseSettings(value: unknown): Settings {
   const motion = isObject(incoming.symbolMotion) ? incoming.symbolMotion : {};
   settings.symbolMotion = {
     mode: motion.mode === "scatter" ? "scatter" : "cycle",
+    loop: motion.loop === true,
     amount: number(motion.amount, defaultSettings.symbolMotion.amount, 1, 100),
     interval: Math.round(number(motion.interval, defaultSettings.symbolMotion.interval, 16, 10000)),
   };

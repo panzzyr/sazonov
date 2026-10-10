@@ -17,7 +17,7 @@
 
 import { bandFor, pitchAspect, type ToneField } from "./tone";
 import { cumulativeWeights, cycleIndex, handDraw, weightedCycleIndex } from "./cellParams";
-import { symbolFrame } from "./symbolMotion";
+import { isScatterLoop, loopPool, loopSymbolIndex, symbolFrame } from "./symbolMotion";
 import { poolCorrection, solveRamp, type SolvedBand } from "./ramp";
 import { drawGlyph, type GlyphLibrary, type MeasuredGlyph } from "./glyphLibrary";
 import { bandGlyphs, bandWeights, gradientPresets, levelToken } from "../presets";
@@ -67,6 +67,8 @@ export type RenderOptions = {
   field: ToneField;
   library: GlyphLibrary;
   frame: number;
+  /** Actual still sequence period; undefined for video and non-sequence callers. */
+  loopFrames?: number;
   ink: ExportInk;
   /** Pre-solved ramp, so a sequence does not re-solve it every frame. */
   ramp?: SolvedBand[];
@@ -86,7 +88,7 @@ export type GlyphPlacement = {
 
 /** The exact mark geometry shared by the canvas and traced-SVG renderers. */
 export function* glyphPlacements(
-  { settings, field, library, frame }: RenderOptions,
+  { settings, field, library, frame, loopFrames }: RenderOptions,
   ramp: SolvedBand[],
   { cell, pitchX, pitchY, offsetY }: CellGeometry,
 ): Generator<GlyphPlacement> {
@@ -107,14 +109,19 @@ export function* glyphPlacements(
       ramp: solveRamp({ ...settings, bands }, library.metrics),
     };
   });
+  const looping = isScatterLoop(settings, loopFrames);
+  const loopPools = looping ? pools.map((pool, index) => loopPool(pool.length, totals[index])) : [];
+  const stepLoopPools = looping ? steps.map((step) => step.pools
+    .map((pool, index) => loopPool(pool.length, step.totals[index]))) : [];
 
   for (let y = 0; y < field.gridH; y += 1) {
     for (let x = 0; x < field.gridW; x += 1) {
       const cellIndex = y * field.gridW + x;
-      const step = steps.length > 1 ? steps[gradientStep(
+      const stepIndex = steps.length > 1 ? gradientStep(
         gradientPosition(settings.gradient.direction, x, y, field.gridW, field.gridH),
         steps.length, settings.gradient.blend, settings.seed, cellIndex,
-      )] : undefined;
+      ) : -1;
+      const step = steps[stepIndex];
       const band = bandFor(field.tone[cellIndex], settings.levels,
         step?.pools.length ?? bandCount, settings.rampInvert);
       const pool = (step?.pools ?? pools)[band];
@@ -127,7 +134,10 @@ export function* glyphPlacements(
       const motion = symbolFrame(settings, cellIndex, frame);
       const chosen = pool.length === 1
         ? reference
-        : library.get(pool[weighted
+        : library.get(pool[looping
+          ? loopSymbolIndex(settings, cellIndex, frame, loopFrames!,
+            stepIndex >= 0 ? stepLoopPools[stepIndex][band] : loopPools[band])
+          : weighted
           ? weightedCycleIndex(settings.glyphSeed, cellIndex, weighted, motion.frame, motion.hold)
           : cycleIndex(settings.glyphSeed, cellIndex, pool.length, motion.frame, motion.hold)]);
       if (!chosen || chosen.density <= 0) continue;
@@ -204,13 +214,13 @@ export class GlyphRenderer {
   /** One pass over the grid, stamping each cell's mark into the mask. */
   private stamp(
     context: CanvasRenderingContext2D,
-    { settings, field, library, frame }: RenderOptions,
+    options: RenderOptions,
     ramp: SolvedBand[],
     geometry: CellGeometry,
   ) {
-    const rotates = settings.hand > 0;
+    const rotates = options.settings.hand > 0;
 
-    for (const placement of glyphPlacements({ settings, field, library, frame, ink: "flat", ramp }, ramp, geometry)) {
+    for (const placement of glyphPlacements({ ...options, ink: "flat", ramp }, ramp, geometry)) {
       if (rotates && placement.rotation !== 0) {
         context.save();
         context.translate(placement.centreX, placement.centreY);

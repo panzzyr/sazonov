@@ -21,17 +21,30 @@ import {
 } from "../src/types";
 
 describe("parsing an untrusted project", () => {
+  it("preserves seamless scatter in JSON and links without enabling it in legacy projects", () => {
+    expect(parseSettings({ symbolMotion: { mode: "scatter", amount: 10, interval: 250 } }).symbolMotion.loop).toBe(false);
+    for (const loop of [true, false]) {
+      const settings = parseSettings({ targetFps: 30, stillFrames: 120,
+        symbolMotion: { mode: "scatter", loop, amount: 10, interval: 250 } });
+      expect(settings.symbolMotion.loop).toBe(loop);
+      expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+      expect(decodeSettings(encodeSettings(settings))).toEqual(settings);
+    }
+    for (const loop of [1, "true", {}, null]) {
+      expect(parseSettings({ symbolMotion: { loop } }).symbolMotion.loop).toBe(false);
+    }
+  });
   it("migrates legacy motion unchanged and validates portable scatter controls", () => {
     expect(parseSettings({ hold: 7 }).symbolMotion).toEqual(initialSettings().symbolMotion);
     const settings = parseSettings({ hold: "infinite", targetFps: 60, stillFrames: 120,
       symbolMotion: { mode: "scatter", amount: 17, interval: 300 } });
-    expect(settings.symbolMotion).toEqual({ mode: "scatter", amount: 17, interval: 300 });
+    expect(settings.symbolMotion).toEqual({ mode: "scatter", loop: false, amount: 17, interval: 300 });
     expect(decodeSettings(encodeSettings(settings))).toEqual(settings);
     expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
     expect(parseSettings({ symbolMotion: { mode: "invalid", amount: -1, interval: 99999 } }).symbolMotion)
-      .toEqual({ mode: "cycle", amount: 1, interval: 10000 });
+      .toEqual({ mode: "cycle", loop: false, amount: 1, interval: 10000 });
     expect(parseSettings({ symbolMotion: { mode: "scatter", amount: 101, interval: 0 } }).symbolMotion)
-      .toEqual({ mode: "scatter", amount: 100, interval: 16 });
+      .toEqual({ mode: "scatter", loop: false, amount: 100, interval: 16 });
     for (const bad of [null, [], "scatter", { amount: NaN, interval: Infinity }]) {
       expect(parseSettings({ symbolMotion: bad }).symbolMotion).toEqual(initialSettings().symbolMotion);
     }

@@ -6,7 +6,7 @@ import type { Settings } from "../src/types";
 
 function scatter(): Settings {
   return { ...initialSettings(), targetFps: 60,
-    symbolMotion: { mode: "scatter", amount: 10, interval: 250 } };
+    symbolMotion: { mode: "scatter", loop: false, amount: 10, interval: 250 } };
 }
 
 describe("independent symbol clocks", () => {
@@ -74,7 +74,7 @@ describe("independent symbol clocks", () => {
   it("amount and interval govern the event rate; infinite overrides both modes", () => {
     const settings = scatter();
     const events = (amount: number, interval: number) => Array.from({ length: 1000 }, (_, cell) =>
-      symbolFrame({ ...settings, symbolMotion: { mode: "scatter", amount, interval } }, cell, 60).frame)
+      symbolFrame({ ...settings, symbolMotion: { mode: "scatter", loop: false, amount, interval } }, cell, 60).frame)
       .reduce((a, b) => a + b, 0);
     expect(events(20, 250)).toBeGreaterThan(events(10, 250));
     expect(events(10, 500)).toBeLessThan(events(10, 250));

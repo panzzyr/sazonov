@@ -149,6 +149,7 @@ export async function* renderSequence(options: SequenceOptions): AsyncGenerator<
         field,
         library,
         frame: index,
+        loopFrames: source.kind === "image" ? total : undefined,
         ink,
         ramp,
         size: frame,

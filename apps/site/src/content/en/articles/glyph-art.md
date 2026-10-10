@@ -307,10 +307,22 @@ mark again. The percentage is an average rate, not a strict per-frame quota.
 This changes marks directly, without a fade, morph or raster retracing.
 Higher FPS makes the updates finer without changing their speed in seconds.
 Seeking backwards, saving a project, sharing a link and exporting reproduce
-the same schedule. Infinite hold overrides either mode. Scatter has no exact
-seamless loop, so that shortcut is disabled; `frames` still sets clip length.
+the same schedule. Infinite hold overrides either mode. Ordinary scatter has
+no exact seamless loop; `frames` still sets clip length.
 Enabling scatter starts a four-second clip if the source had only one frame;
 an existing sequence length is left alone. The timing panel shows its duration.
+
+For a still on a fixed grid, enable `seamless loop` under scatter. Its period
+is exactly `frames` / FPS. Every active cell follows a seeded ring of 2–4
+distinct marks drawn from the full eligible pool, repeating an integer number
+of times per clip. A random phase offset spreads switches across the loop,
+including the last-to-first boundary. No closing batch or duplicate end frame
+is appended. At rare update rates, some cells remain static: an active cell
+needs at least two changes to leave its first mark and return. The percentage
+is an average update budget, subject to the output frame rate. The ring repeats
+identically on each playback loop; shuffle chooses fresh marks and schedules.
+This option is inactive for video sources or grid animation, which keep ordinary
+scatter rather than claiming to loop changing source content.
 
 Marks sharing a band should be variations of the same mark — three drawings of
 the same X, not three unrelated shapes. Unrelated shapes on random phase is

@@ -117,7 +117,18 @@ export function Support() {
             A high-weight mark may be selected again. Higher FPS makes the
             schedule finer, not faster. There is no crossfade or retracing:
             PNG, MP4 and the current-frame SVG use the same original marks.
-            Scatter has no exact seamless loop. Infinite hold overrides both modes.
+            Ordinary scatter has no exact seamless loop. Infinite hold overrides both modes.
+          </p>
+          <p>
+            For a still with grid animation off, enable <em>seamless loop</em>
+            under scatter. Its period is exactly <em>frames</em> / FPS. Each cell
+            repeats its own seeded ring of 2–4 distinct, eligible marks, drawn
+            from the full tone pool. Low rates leave a random subset static;
+            active cells change at least twice to return to their first mark.
+            Switches across the last-to-first boundary are distributed like
+            any other frame, without a global reset or a duplicated end frame.
+            Preview and exports share this schedule. Video sources and animated
+            grids fall back to ordinary scatter; the panel reports that the loop is inactive.
           </p>
           <p>
             <em>shuffle symbols</em> redraws each cell from its full tone pool, not from
