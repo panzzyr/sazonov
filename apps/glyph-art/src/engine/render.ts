@@ -18,6 +18,8 @@
 import { bandFor, pitchAspect, type ToneField } from "./tone";
 import { cumulativeWeights, cycleIndex, handDraw, weightedCycleIndex } from "./cellParams";
 import { isScatterLoop, loopPool, loopSymbolIndex, symbolFrame } from "./symbolMotion";
+import { symbolOpacity } from "./symbolBlend";
+import { clippedTone } from "./backgroundCleanup";
 import { poolCorrection, solveRamp, type SolvedBand } from "./ramp";
 import { drawGlyph, type GlyphLibrary, type MeasuredGlyph } from "./glyphLibrary";
 import { bandGlyphs, bandWeights, gradientPresets, levelToken } from "../presets";
@@ -84,6 +86,7 @@ export type GlyphPlacement = {
   width: number;
   height: number;
   rotation: number;
+  opacity: number;
 };
 
 /** The exact mark geometry shared by the canvas and traced-SVG renderers. */
@@ -117,6 +120,9 @@ export function* glyphPlacements(
   for (let y = 0; y < field.gridH; y += 1) {
     for (let x = 0; x < field.gridW; x += 1) {
       const cellIndex = y * field.gridW + x;
+      if (clippedTone(field.tone[cellIndex], settings.cleanup)) continue;
+      const opacity = symbolOpacity(settings, cellIndex, frame, loopFrames);
+      if (opacity <= 0) continue;
       const stepIndex = steps.length > 1 ? gradientStep(
         gradientPosition(settings.gradient.direction, x, y, field.gridW, field.gridH),
         steps.length, settings.gradient.blend, settings.seed, cellIndex,
@@ -147,7 +153,7 @@ export function* glyphPlacements(
         settings.maxSize,
         (step?.ramp ?? ramp)[band].size * poolCorrection(reference, chosen) * hand.sizeScale,
       );
-      if (size < minMarkSize) continue;
+      if (size < Math.max(minMarkSize, settings.cleanup.minSize)) continue;
 
       const long = size * cell;
       yield {
@@ -158,6 +164,7 @@ export function* glyphPlacements(
         width: chosen.aspect >= 1 ? long : long * chosen.aspect,
         height: chosen.aspect >= 1 ? long / chosen.aspect : long,
         rotation: hand.rotation,
+        opacity,
       };
     }
   }
@@ -202,6 +209,7 @@ export class GlyphRenderer {
     const maskContext = context2d(this.mask);
     maskContext.setTransform(1, 0, 0, 1, 0, 0);
     maskContext.globalCompositeOperation = "source-over";
+    maskContext.globalAlpha = 1;
     maskContext.clearRect(0, 0, width, height);
     maskContext.imageSmoothingEnabled = true;
     maskContext.imageSmoothingQuality = "high";
@@ -221,6 +229,7 @@ export class GlyphRenderer {
     const rotates = options.settings.hand > 0;
 
     for (const placement of glyphPlacements({ ...options, ink: "flat", ramp }, ramp, geometry)) {
+      context.globalAlpha = placement.opacity;
       if (rotates && placement.rotation !== 0) {
         context.save();
         context.translate(placement.centreX, placement.centreY);
@@ -245,6 +254,7 @@ export class GlyphRenderer {
         placement.height,
       );
     }
+    context.globalAlpha = 1;
   }
 
   /** Paints the accumulated alpha, either one ink or the source's own colour. */

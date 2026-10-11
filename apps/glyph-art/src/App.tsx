@@ -5,6 +5,8 @@ import { RangeControl, SliderControl } from "./components/RangeControl";
 import { GridAnimation } from "./components/GridAnimation";
 import { SpatialGradient } from "./components/SpatialGradient";
 import { SymbolHold } from "./components/SymbolHold";
+import { SymbolBlend } from "./components/SymbolBlend";
+import { BackgroundCleanup } from "./components/BackgroundCleanup";
 import { GlyphLibrary, readFileAsDataUrl } from "./engine/glyphLibrary";
 import { GlyphRenderer } from "./engine/render";
 import { HalftoneRenderer } from "./engine/halftone";
@@ -257,7 +259,8 @@ export function App() {
     return renderSettings.mode === "halftone"
       ? halftoneField(renderSettings, media.width, media.height)
       : gridSize(renderSettings.grid, media.width, media.height, renderSettings.spacing);
-  }, [media, renderSettings]);
+  }, [media, renderSettings.mode, renderSettings.grid, renderSettings.spacing.x,
+    renderSettings.spacing.y, renderSettings.outputWidth, renderSettings.halftone.lines]);
   const raster = exportSource ? sequenceSize(exportSource, settings) : null;
   const frameWidth = raster?.width ?? 0;
   const frameHeight = raster?.height ?? 0;
@@ -301,6 +304,7 @@ export function App() {
   // Sampling the source is the only step that reads the raster, so it is kept
   // apart from drawing: a still is sampled once, a video once per frame.
   const videoFrame = media?.kind === "video" ? frame : 0;
+  const sampleAspect = renderSettings.mode === "halftone" ? 1 : pitchAspect(renderSettings.spacing);
   useEffect(() => {
     if (!media) {
       setField(null);
@@ -310,9 +314,7 @@ export function App() {
     // A halftone dot reads the picture at its own centre, so the field it reads
     // is not the screen and has nothing to do with the ruling; the glyph path's
     // field *is* the cell grid. One sampling step, two very different grids.
-    const halftoning = renderSettings.mode === "halftone";
     const { gridW, gridH } = previewGrid!;
-    const cellAspect = halftoning ? 1 : pitchAspect(renderSettings.spacing);
 
     const run = async () => {
       if (media.kind === "video") {
@@ -320,7 +322,7 @@ export function App() {
         if (cancelled) return;
       }
       const source = media.kind === "video" ? media.video : media.bitmap;
-      const next = sampleSource(source, media.width, media.height, gridW, gridH, scratchRef.current!, cellAspect);
+      const next = sampleSource(source, media.width, media.height, gridW, gridH, scratchRef.current!, sampleAspect);
       if (!cancelled) {
         sampledMediaRef.current = media;
         sampledFieldRef.current = next;
@@ -331,7 +333,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [media, previewGrid, renderSettings, videoFrame]);
+  }, [media, previewGrid, sampleAspect, renderSettings.targetFps, videoFrame]);
 
   // Auto-levels, once per source. A flat photo quantized into seven bands uses
   // four of them and looks dead; per-frame levels on a video would pump.
@@ -742,8 +744,8 @@ export function App() {
           {!halftoning && (
             <section className="panel-block">
               <h2><Icon name="presets" />presets</h2>
-              <details className="step-details" open={!settings.gradient.enabled}>
-              <summary>single-step presets</summary>
+              <details className="step-details">
+              <summary>single-step presets{preset && ` · ${preset.label}`}</summary>
               {presetEraList.map((era) => (
                 <div key={era.label} className="preset-era">
                   <p className="preset-era-label">{era.label}</p>
@@ -754,7 +756,11 @@ export function App() {
                         type="button"
                         aria-pressed={!settings.gradient.enabled && preset?.id === entry.id}
                         aria-label={entry.label}
-                        onClick={() => usePreset(entry)}
+                        onClick={(event) => {
+                          usePreset(entry);
+                          const picker = event.currentTarget.closest("details");
+                          if (picker) picker.open = false;
+                        }}
                       >
                         {entry.variant}
                       </button>
@@ -920,6 +926,9 @@ export function App() {
               </>
             )}
           </section>
+
+          {!halftoning && <BackgroundCleanup value={settings.cleanup}
+            onChange={(value, key) => setGlobal("cleanup", value, key)} />}
 
           {halftoning && (
             <section className="panel-block">
@@ -1162,21 +1171,19 @@ export function App() {
           <section className="panel-block">
             <h2><Icon name="output" />output</h2>
             {!halftoning && (
-              <div className="field">
-                <label htmlFor="seed">seed</label>
-                <input
-                  id="seed"
-                  type="number"
-                  min={0}
-                  value={settings.seed}
-                  onChange={(event) => setGlobal("seed", Math.max(0, Number(event.target.value) >>> 0))}
-                />
-                <button type="button" onClick={reroll}>reroll</button>
-              </div>
-            )}
-
-            {!halftoning && (
-              <>
+              <details className="control-details">
+                <summary>randomness / seeds</summary>
+                <div className="field">
+                  <label htmlFor="seed">seed</label>
+                  <input
+                    id="seed"
+                    type="number"
+                    min={0}
+                    value={settings.seed}
+                    onChange={(event) => setGlobal("seed", Math.max(0, Number(event.target.value) >>> 0))}
+                  />
+                  <button type="button" onClick={reroll}>reroll</button>
+                </div>
                 <div className="field">
                   <label htmlFor="glyph-seed">symbol seed</label>
                   <input
@@ -1193,7 +1200,7 @@ export function App() {
                   on screen. New sources and preset choices shuffle automatically; saved
                   projects keep their choice. A band with one mark cannot change.
                 </p>
-              </>
+              </details>
             )}
 
             {!halftoning && (
@@ -1258,7 +1265,7 @@ export function App() {
           </section>
 
           <section className="panel-block">
-            <h2><Icon name="timing" />timing</h2>
+            <h2><Icon name="timing" />clip timing</h2>
             <SliderControl
               label="frame rate"
               value={settings.targetFps}
@@ -1267,11 +1274,29 @@ export function App() {
               unit=" fps"
               onChange={(value) => setGlobal("targetFps", Math.round(value))}
             />
-            {/* hold and the seamless loop are properties of a cycling band, and
-                a halftone has no bands: a still screened at a fixed ruling is
-                the same frame every time, so offering either would be a lie. */}
-            {!halftoning && (
-              <>
+            {media?.kind !== "video" && <>
+              <SliderControl label="frames" value={settings.stillFrames} min={1} max={MAX_EXPORT_FRAMES}
+                onChange={(value) => setGlobal("stillFrames", Math.round(value))} />
+              <p className="control-hint">Sequence: {(settings.stillFrames / settings.targetFps).toFixed(2)} seconds.
+                {halftoning && " A still under a fixed screen does not change with time."}</p>
+            </>}
+            {media?.kind === "video" && <p className="control-hint">
+              Source length: {media.duration.toFixed(2)} seconds · {totalFrames} output frames.
+            </p>}
+          </section>
+
+          {!halftoning && <SymbolBlend blend={settings.symbolBlend} frames={exportSource ? totalFrames : settings.stillFrames}
+            fps={settings.targetFps} frame={frame} looping={media?.kind === "image" && settings.symbolMotion.loop
+              && settings.symbolMotion.mode === "scatter" && !settings.animation.enabled}
+            onChange={(value, key) => setGlobal("symbolBlend", value, key)}
+            onEnable={() => useGlyphArtStore.getState().enableSymbolBlend(
+              media?.kind !== "video" && settings.stillFrames < 2 ? settings.targetFps * 4
+                : exportSource ? totalFrames : settings.stillFrames,
+              media?.kind !== "video",
+            )} />}
+
+          {!halftoning && <section className="panel-block">
+            <h2><Icon name="timing" />symbol motion</h2>
                 <div className="field">
                   <label htmlFor="symbol-motion">symbol motion</label>
                   <select id="symbol-motion" value={settings.symbolMotion.mode}
@@ -1315,29 +1340,14 @@ export function App() {
                       + "Cells start on different marks but switch on shared frame boundaries. Use scatter for gradual updates."
                     : "Put more than one mark on a band and they will cycle. Until then nothing moves."}
                 </p>
-              </>
-            )}
             {media?.kind === "image" && (
               <>
-                <SliderControl
-                  label="frames"
-                  value={settings.stillFrames}
-                  min={1}
-                  max={240}
-                  onChange={(value) => setGlobal("stillFrames", Math.round(value))}
-                />
-                <p className="control-hint">Sequence: {(settings.stillFrames / settings.targetFps).toFixed(2)} seconds.</p>
-                {halftoning ? (
-                  <p className="control-hint">
-                    A still under a fixed screen is the same frame every time. Length only
-                    matters for a video, or if you want a still held as a clip.
-                  </p>
-                ) : (
                   <div className="button-row">
                     <button
                       type="button"
                       onClick={() => setGlobal("stillFrames", seamless)}
                       disabled={settings.animation.enabled
+                        || settings.symbolBlend.enabled
                         || (settings.symbolMotion.mode === "scatter" && settings.hold !== "infinite")
                         || settings.stillFrames === seamless}
                     >
@@ -1348,13 +1358,15 @@ export function App() {
                         : `${settings.hold === "infinite" ? "static symbols" : "seamless loop"}: ${seamless}`}
                     </button>
                   </div>
-                )}
-                {!halftoning && settings.animation.enabled && <p className="control-hint">
+                {settings.animation.enabled && <p className="control-hint">
                   Grid motion uses the full sequence length; a symbol-cycle loop cannot set its duration.
+                </p>}
+                {settings.symbolBlend.enabled && <p className="control-hint">
+                  Appearance uses the full clip; a symbol-cycle shortcut cannot shorten it.
                 </p>}
               </>
             )}
-          </section>
+          </section>}
 
           <section className="panel-block">
             <h2><Icon name="export" />export</h2>
@@ -1391,10 +1403,9 @@ export function App() {
                     + (halftone.separation === "mono"
                       ? "One plate, black on white."
                       : "The plates are set to multiply, the way the inks do.")
-                  : "Exports the current frame as editable vector paths, gathered into one "
-                    + "path per ink. Reaction marks keep their native curves; scanned marks are "
-                    + "traced from the preview masks. Fine antialiasing becomes a hard contour, and every impression "
-                    + "is written out, so a fine grid makes a large file."}
+                  : "Exports the current frame using the same prepared vector outlines as PNG and MP4 — "
+                    + "no retracing. Fully visible marks are gathered by ink; fading marks keep their own opacity. "
+                    + "Dense grids can produce large files."}
               </p>
             ) : format === "png" ? (
               <>

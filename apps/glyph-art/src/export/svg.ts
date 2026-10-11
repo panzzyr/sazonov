@@ -23,10 +23,12 @@
  * is written out per impression instead and `export/trace.ts` earns that back
  * by making each outline small.
  *
- * One path per ink, not one per mark: a frame is thousands of impressions, and
+ * Opaque marks use one path per ink: a frame is thousands of impressions, and
  * an editor that is handed thousands of objects crawls. Overlapping marks
  * inside one path merge under `nonzero`, which is the same union the canvas
  * renderer builds in alpha.
+ * Fading marks remain separate paths with fill-opacity, so overlaps accumulate
+ * the same alpha as the mask rather than becoming one translucent union.
  */
 
 import { cellGeometry, glyphPlacements, type RenderOptions } from "../engine/render";
@@ -107,6 +109,7 @@ function glyphBody(options: SvgOptions) {
   const geometry = cellGeometry(settings, size.width, field.gridW, size.height, field.gridH);
   const paper = settings.invert ? "#000000" : "#ffffff";
   const inks = new Map<string, string[]>();
+  const fading: string[] = [];
 
   for (const placement of glyphPlacements({ ...options, ink: "flat", ramp }, ramp, geometry)) {
     const { glyph, width, height, centreX, centreY, rotation } = placement;
@@ -174,6 +177,12 @@ function glyphBody(options: SvgOptions) {
         settings.invert,
       )
       : (settings.invert ? "#ffffff" : "#000000");
+    // Partial marks must remain separate: grouping overlapping translucent
+    // contours into one path would union rather than stack their alpha.
+    if (placement.opacity < 1) {
+      fading.push(`<path fill="${ink}" fill-opacity="${decimal(placement.opacity, 6)}" d="${data}"/>`);
+      continue;
+    }
     const bucket = inks.get(ink);
     if (bucket) bucket.push(data);
     else inks.set(ink, [data]);
@@ -182,7 +191,7 @@ function glyphBody(options: SvgOptions) {
   const paths = [...inks].map(([ink, data], index) =>
     `<path id="ink-${index}" fill="${ink}" d="${data.join("")}"/>`).join("");
 
-  return `<rect width="${size.width}" height="${size.height}" fill="${paper}"/>${paths}`;
+  return `<rect width="${size.width}" height="${size.height}" fill="${paper}"/>${paths}${fading.join("")}`;
 }
 
 /**

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { defaultBandGlyphs, markSpecs } from "./engine/marks";
 import { fitPeak, rebalance, type DensityLookup } from "./engine/ramp";
 import { freshSeed } from "./engine/hash";
+import { fitSymbolBlend } from "./engine/symbolBlend";
 import { applyPreset, defaultGradientSteps, findPreset, type Preset } from "./presets";
 import {
   defaultBandCount,
@@ -76,6 +77,8 @@ type GlobalKey =
   | "outputWidth"
   | "hold"
   | "symbolMotion"
+  | "symbolBlend"
+  | "cleanup"
   | "animation"
   | "gradient"
   | "levels";
@@ -92,6 +95,7 @@ type GlyphArtStore = {
   setGlobal: <Key extends GlobalKey>(key: Key, value: Settings[Key], editKey?: string) => void;
   enableGridAnimation: (animation: GridAnimation, minimumFrames: number) => void;
   setSymbolMotionMode: (mode: Settings["symbolMotion"]["mode"]) => void;
+  enableSymbolBlend: (frames: number, stillSource: boolean) => void;
   enableSpatialGradient: (enabled: boolean) => void;
   setBandCount: (count: number) => void;
   setBandGlyphs: (index: number, glyphs: string[]) => void;
@@ -144,6 +148,18 @@ export const useGlyphArtStore = create<GlyphArtStore>((set) => {
     lastEditAt: 0,
 
     selectBand: (selectedBand) => set({ selectedBand }),
+
+    enableSymbolBlend: (frames, stillSource) => edit((settings) => {
+      const first = settings.stillFrames < 2 && stillSource;
+      const pristine = settings.symbolBlend.enterStart === defaultSettings.symbolBlend.enterStart
+        && settings.symbolBlend.enterDuration === defaultSettings.symbolBlend.enterDuration
+        && settings.symbolBlend.exitStart === defaultSettings.symbolBlend.exitStart
+        && settings.symbolBlend.exitDuration === defaultSettings.symbolBlend.exitDuration;
+      if (first) settings.stillFrames = frames;
+      const blend = { ...settings.symbolBlend, enabled: true };
+      settings.symbolBlend = first || pristine
+        ? fitSymbolBlend(blend, frames, settings.targetFps) : blend;
+    }),
 
     setGlobal: (key, value, editKey) => edit((settings) => {
       if (key === "seed") settings.glyphSeed = value as number;

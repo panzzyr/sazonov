@@ -280,6 +280,26 @@ export function parseSettings(value: unknown): Settings {
     amount: number(motion.amount, defaultSettings.symbolMotion.amount, 1, 100),
     interval: Math.round(number(motion.interval, defaultSettings.symbolMotion.interval, 16, 10000)),
   };
+  const blend = isObject(incoming.symbolBlend) ? incoming.symbolBlend : {};
+  const blendDefaults = defaultSettings.symbolBlend;
+  settings.symbolBlend = {
+    enabled: blend.enabled === true,
+    enterStart: number(blend.enterStart, blendDefaults.enterStart, 0, maxExportFrames),
+    enterDuration: number(blend.enterDuration, blendDefaults.enterDuration, 0, maxExportFrames),
+    exitEnabled: typeof blend.exitEnabled === "boolean" ? blend.exitEnabled : blendDefaults.exitEnabled,
+    exitStart: number(blend.exitStart, blendDefaults.exitStart, 0, maxExportFrames),
+    exitDuration: number(blend.exitDuration, blendDefaults.exitDuration, 0, maxExportFrames),
+    fade: number(blend.fade, blendDefaults.fade, 0, 5),
+    exitOrder: blend.exitOrder === "reverse" || blend.exitOrder === "random" ? blend.exitOrder : "same",
+  };
+  const cleanup = isObject(incoming.cleanup) ? incoming.cleanup : {};
+  settings.cleanup = {
+    black: cleanup.black === true,
+    white: cleanup.white === true,
+    blackTolerance: number(cleanup.blackTolerance, defaultSettings.cleanup.blackTolerance, 0, 0.49),
+    whiteTolerance: number(cleanup.whiteTolerance, defaultSettings.cleanup.whiteTolerance, 0, 0.49),
+    minSize: number(cleanup.minSize, defaultSettings.cleanup.minSize, 0.05, 1),
+  };
   settings.gradient = readGradient(incoming.gradient);
   if (settings.animation.enabled && settings.stillFrames < 2) {
     settings.stillFrames = settings.targetFps * 4;

@@ -112,6 +112,47 @@ button:disabled {
   line-height: 1.45;
 }
 
+.control-details {
+  margin: .75rem 0;
+  font-size: var(--step--2);
+}
+
+.control-details summary {
+  margin-bottom: .75rem;
+  cursor: pointer;
+}
+
+.blend-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .6rem;
+  margin: .9rem 0;
+}
+
+.blend-time {
+  display: grid;
+  gap: .4rem;
+  font: var(--step--2)/1.25 var(--font-mono);
+}
+
+.blend-time .number-entry {
+  width: 100%;
+}
+
+.control-unit { color: var(--ink-2); }
+
+.blend-clock {
+  margin: .75rem 0;
+  padding: .6rem;
+  border: 1px solid var(--rule);
+  font: var(--step--2)/1.4 var(--font-mono);
+}
+
+.blend-clock > div { display: flex; gap: .5rem; align-items: center; }
+.blend-clock p { margin: .5rem 0 0; color: var(--ink-2); }
+.blend-track { position: relative; flex: 1; height: .6rem; background: var(--rule); }
+.blend-track i { position: absolute; height: 100%; background: var(--ink-2); }
+
 /* -------------------------------------------------------------- controls */
 
 .range-control {

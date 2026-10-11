@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-11 — independent cell appearance and source-background cleanup
+
+- **Decision:** Add a stateless, layout-seeded per-cell opacity envelope in seconds, independent of scatter/cycling. Share it and raw-tone/minimum-size clipping in glyph placements for Canvas and SVG. Keep partial SVG impressions separate with fill opacity; reuse their original prepared outlines.
+- **Alternatives:** Reveal a rectangular wipe, resample symbol artwork, blend the original source under the print, or merely increase contrast.
+- **Reason:** The owner wants randomly staggered appearance/departure on plain paper while scatter continues, and control over almost invisible marks on black/white source backgrounds. They explicitly exclude the original photo/video from the output background.
+- **Consequences:** Existing projects keep opaque marks and opt-out cleanup. JSON, links and undo preserve new controls; infinite hold freezes picks but not appearance. Fitting phases reserves an empty final frame for an empty-to-empty loop. Source clipping is before levels/ramp inversion and can remove matching foreground too. Raster alpha passes retain fades; SVG remains paths with no raster embedding or retracing. Split clip timing, symbol motion and appearance controls; expand the still-length UI to the existing 900-frame memory guard. No dependencies or network APIs added.
+
 ## 2026-10-10 — one vector source for every glyph output
 
 - **Decision:** Pre-trace all 61,127 committed scans into 27 lazy local vector modules. Draw cached Path2D outlines in Canvas/PNG/MP4 and use those same contours in SVG. Trace loose uploads and text once on insertion; keep original native reaction curves.

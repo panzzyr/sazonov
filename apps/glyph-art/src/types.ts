@@ -134,6 +134,29 @@ export type SymbolMotion = {
   interval: number;
 };
 
+/** Seconds on the clip clock, independent of symbol cycling and grid motion. */
+export type SymbolBlend = {
+  enabled: boolean;
+  enterStart: number;
+  enterDuration: number;
+  exitEnabled: boolean;
+  exitStart: number;
+  exitDuration: number;
+  /** Per-cell fade, capped by the phase duration. Zero means an instant switch. */
+  fade: number;
+  exitOrder: "same" | "reverse" | "random";
+};
+
+/** Raw source lightness, before levels/invert; zero tolerances still clip exact endpoints. */
+export type BackgroundCleanup = {
+  black: boolean;
+  white: boolean;
+  blackTolerance: number;
+  whiteTolerance: number;
+  /** Minimum longest mark dimension as a fraction of its cell. */
+  minSize: number;
+};
+
 export type GridKeyframe = {
   /** Position in the clip, from the first frame (0) to the last (1). */
   at: number;
@@ -198,6 +221,7 @@ export type Settings = {
   maxSize: number;
   /** Black point and white point applied to the cell tones before banding. */
   levels: Range;
+  cleanup: BackgroundCleanup;
   /** One knob for seeded rotation, offset and size jitter per cell, 0..1. */
   hand: number;
   colorMode: ColorMode;
@@ -218,6 +242,7 @@ export type Settings = {
   /** Frames each mark is held for, 1..24, or no temporal cycling at all. */
   hold: SymbolHold;
   symbolMotion: SymbolMotion;
+  symbolBlend: SymbolBlend;
   /** Optional timeline for the grid density. Static SVG still uses one frame. */
   animation: GridAnimation;
   gradient: SpatialGradient;
@@ -321,6 +346,7 @@ export const defaultSettings: Settings = {
   peak: 1.05,
   maxSize: maxMarkSize,
   levels: { min: 0, max: 1 },
+  cleanup: { black: false, white: false, blackTolerance: 0.02, whiteTolerance: 0.02, minSize: minMarkSize },
   hand: 0,
   colorMode: "mono",
   invert: false,
@@ -330,6 +356,10 @@ export const defaultSettings: Settings = {
   outputWidth: 2048,
   hold: 2,
   symbolMotion: { mode: "cycle", loop: false, amount: 10, interval: 250 },
+  symbolBlend: {
+    enabled: false, enterStart: 0, enterDuration: 1, exitEnabled: true,
+    exitStart: 3, exitDuration: 1, fade: 0.12, exitOrder: "same",
+  },
   animation: {
     enabled: false,
     interpolation: "ease-in-out",
