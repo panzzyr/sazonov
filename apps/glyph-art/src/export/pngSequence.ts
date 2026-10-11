@@ -1,5 +1,6 @@
-import { strToU8, zipSync, type Zippable } from "fflate";
-import { renderSequence, sequenceSize, type SequenceOptions } from "./renderSequence";
+import { frameCount, normalizeFrameRange, renderSequence, sequenceSize, type SequenceOptions } from "./renderSequence";
+import { ZipParts } from "./zipParts";
+import type { ExportDirectory } from "./fileOutput";
 import { plateNames } from "../engine/halftone";
 import { isScatterLoop } from "../engine/symbolMotion";
 import type { ExportInk } from "../types";
@@ -26,6 +27,8 @@ export type PngExportOptions = Omit<SequenceOptions, "ink" | "plate"> & {
   separations: boolean;
   basename: string;
   onProgress: (completed: number, total: number) => void;
+  directory?: ExportDirectory;
+  onArchive: (blob: Blob, name: string) => void | Promise<void>;
 };
 
 type Pass = { folder: string; note: string; ink: ExportInk; plate?: number };
@@ -55,32 +58,17 @@ function passesFor(options: PngExportOptions): Pass[] {
 }
 
 /**
- * Renders the sequence once per requested pass and packs every frame into a
- * single ZIP. Each pass lands in its own folder so an editor can import them
- * as separate layers.
+ * Incremental ZIP parts. No retained full sequence; absolute frame names allow
+ * parts to be merged without restarting scatter, appearance or grid keyframes.
  */
 export async function exportPngSequence(options: PngExportOptions) {
-  const { inks: _inks, separations: _separations, basename, onProgress, ...sequence } = options;
-  const stem = basename.replace(/\.[^.]+$/, "") || "glyph-art";
+  const { inks: _inks, separations: _separations, basename, onProgress, directory, onArchive, ...sequence } = options;
+  const stem = basename.replace(/\.[^.]+$/, "").replaceAll(/[\\/]/g, "_") || "glyph-art";
   const passes = passesFor(options);
-  const files: Zippable = {};
-
-  let completed = 0;
-  let total = 0;
-
-  for (const pass of passes) {
-    for await (const frame of renderSequence({ ...sequence, ink: pass.ink, plate: pass.plate })) {
-      total = frame.total * passes.length;
-      const blob = await canvasBlob(frame.canvas);
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const name = `${stem}-${String(frame.index).padStart(4, "0")}.png`;
-      files[passes.length > 1 ? `${pass.folder}/${name}` : name] = [bytes, { level: 0 }];
-      completed += 1;
-      onProgress(completed, total);
-      // Yield to the event loop so the progress bar and cancel button stay live.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  }
+  const fullTotal = frameCount(options.source, options.settings);
+  const range = normalizeFrameRange(fullTotal, options.range);
+  const total = (range.end - range.start) * passes.length;
+  const digits = Math.max(4, String(fullTotal - 1).length);
 
   const { settings } = options;
   const frame = sequenceSize(options.source, settings);
@@ -118,6 +106,8 @@ export async function exportPngSequence(options: PngExportOptions) {
     `${stem} — glyph art PNG sequence`,
     "",
     `frames per pass: ${total / passes.length}`,
+    `source frame range: ${range.start}..${range.end - 1} (inclusive)`,
+    `full timeline frames: ${fullTotal}`,
     `frame rate: ${settings.targetFps} fps`,
     `frame: ${frame.width} × ${frame.height} px`,
     ...description,
@@ -126,9 +116,29 @@ export async function exportPngSequence(options: PngExportOptions) {
     ...passes.map((pass) => `  ${pass.folder} — ${pass.note}`),
     "",
     "Import as an image sequence at the frame rate above.",
+    "Combine all ZIP parts into one folder. Frame names use full-timeline indices; no frames are skipped.",
     "",
   ].join("\n");
-  files["README.txt"] = strToU8(readme);
-
-  return new Blob([zipSync(files, { level: 6 })], { type: "application/zip" });
+  const archives = new ZipParts({ basename: `${stem}-glyph-art`, directory, onArchive,
+    readme: (part) => `${readme}\narchive part: ${part}\n` });
+  let completed = 0;
+  try {
+    for (const pass of passes) {
+      for await (const frame of renderSequence({ ...sequence, ink: pass.ink, plate: pass.plate })) {
+        const blob = await canvasBlob(frame.canvas);
+        options.signal.throwIfAborted();
+        const name = `${stem}-${String(frame.index).padStart(digits, "0")}.png`;
+        await archives.add(passes.length > 1 ? `${pass.folder}/${name}` : name,
+          new Uint8Array(await blob.arrayBuffer()));
+        onProgress(++completed, total);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    options.signal.throwIfAborted();
+    await archives.finish();
+    return archives.parts;
+  } catch (error) {
+    await archives.abort().catch(() => {});
+    throw error;
+  }
 }

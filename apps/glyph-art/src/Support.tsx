@@ -1,5 +1,4 @@
 import { ToolShell } from "./shared/Shell";
-import { MAX_EXPORT_FRAMES } from "./export/renderSequence";
 import { presets } from "./presets";
 import {
   maxBands,
@@ -220,8 +219,12 @@ export function Support() {
             (shift-click reload) replaces it.
           </p>
           <p>
-            Export stops at {MAX_EXPORT_FRAMES} frames. Below about eight pixels per cell
-            the marks stop reading as marks; the panel says so when you get there.
+            The full video timeline is available; export does not stop at 900 frames.
+            Choose an export interval without restarting scatter, appearance or grid keyframes.
+            When available, save directly to disk: MP4 streams to one file, PNG to numbered
+            ZIP parts in a chosen folder. Download fallback splits long output into parts;
+            allow multiple downloads if the browser asks. Completed parts survive cancellation.
+            Below about eight pixels per cell the marks stop reading as marks.
           </p>
           <p>
             Video decoding depends on the codecs built into the browser. If an MP4 or MOV

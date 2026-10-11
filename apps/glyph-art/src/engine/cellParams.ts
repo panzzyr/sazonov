@@ -131,9 +131,9 @@ function greatestCommonDivisor(a: number, b: number): number {
 }
 
 /**
- * Frames after which every band's cycle lines up again. With the shipped set
- * every pool holds one mark, so this is 1 — an honest answer for a tool that
- * is static until the user asks for motion.
+ * Frames after which every band's cycle lines up again. A period too large
+ * for exact JS frame indices is not an exportable loop; never pretend a
+ * truncated common multiple closes the seam.
  */
 export function loopLength(poolLengths: number[], hold: SymbolHold) {
   // Nothing cycles, so every frame would be identical: one frame is the loop.
@@ -141,8 +141,9 @@ export function loopLength(poolLengths: number[], hold: SymbolHold) {
   let multiple = 1;
   for (const length of poolLengths) {
     const value = Math.max(1, length);
-    multiple = (multiple * value) / greatestCommonDivisor(multiple, value);
-    if (multiple > 900) return 900;
+    const factor = value / greatestCommonDivisor(multiple, value);
+    if (multiple > Number.MAX_SAFE_INTEGER / Math.max(1, hold) / factor) return null;
+    multiple *= factor;
   }
   return Math.max(1, multiple * Math.max(1, hold));
 }

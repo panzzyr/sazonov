@@ -29,7 +29,8 @@ import {
   gradientDirections,
   markKinds,
   maxBands,
-  maxExportFrames,
+  maxTimelineFrames,
+  maxTimelineSeconds,
   maxFps,
   maxGain,
   maxGrid,
@@ -261,7 +262,7 @@ export function parseSettings(value: unknown): Settings {
   settings.hand = number(incoming.hand, defaultSettings.hand, 0, 1);
   settings.targetFps = Math.round(number(incoming.targetFps, defaultSettings.targetFps, minFps, maxFps));
   settings.stillFrames = Math.round(
-    number(incoming.stillFrames, defaultSettings.stillFrames, 1, maxExportFrames),
+    number(incoming.stillFrames, defaultSettings.stillFrames, 1, maxTimelineFrames),
   );
   const legacyHalftone = isObject(incoming.halftone) ? incoming.halftone.width : undefined;
   settings.outputWidth = Math.round(number(
@@ -284,11 +285,11 @@ export function parseSettings(value: unknown): Settings {
   const blendDefaults = defaultSettings.symbolBlend;
   settings.symbolBlend = {
     enabled: blend.enabled === true,
-    enterStart: number(blend.enterStart, blendDefaults.enterStart, 0, maxExportFrames),
-    enterDuration: number(blend.enterDuration, blendDefaults.enterDuration, 0, maxExportFrames),
+    enterStart: number(blend.enterStart, blendDefaults.enterStart, 0, maxTimelineSeconds),
+    enterDuration: number(blend.enterDuration, blendDefaults.enterDuration, 0, maxTimelineSeconds),
     exitEnabled: typeof blend.exitEnabled === "boolean" ? blend.exitEnabled : blendDefaults.exitEnabled,
-    exitStart: number(blend.exitStart, blendDefaults.exitStart, 0, maxExportFrames),
-    exitDuration: number(blend.exitDuration, blendDefaults.exitDuration, 0, maxExportFrames),
+    exitStart: number(blend.exitStart, blendDefaults.exitStart, 0, maxTimelineSeconds),
+    exitDuration: number(blend.exitDuration, blendDefaults.exitDuration, 0, maxTimelineSeconds),
     fade: number(blend.fade, blendDefaults.fade, 0, 5),
     exitOrder: blend.exitOrder === "reverse" || blend.exitOrder === "random" ? blend.exitOrder : "same",
   };

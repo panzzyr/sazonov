@@ -65,6 +65,10 @@ Glyph art can stagger symbol appearance/departure independently of scatter,
 and clip black/white source backgrounds or tiny marks identically in every
 glyph export. See [blend timing and background cleanup](docs/glyph-art-blend.md).
 
+Video and still timelines no longer stop at 900 frames. Export the whole clip or
+a selected interval; long MP4s can stream to one local file and PNG sequences
+use bounded ZIP parts. See [long exports](docs/glyph-art-long-exports.md).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for editing guidance and
 [`docs/publishing/README.md`](docs/publishing/README.md) for GitHub,
 Cloudflare Pages, and DNS setup.

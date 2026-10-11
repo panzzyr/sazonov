@@ -169,6 +169,8 @@ type SliderControlProps = {
   value: number;
   min: number;
   max: number;
+  /** A convenient drag range without restricting values typed into the number field. */
+  sliderMax?: number;
   step?: number;
   unit?: string;
   precision?: number;
@@ -181,6 +183,7 @@ export function SliderControl({
   value,
   min,
   max,
+  sliderMax,
   step = 1,
   unit = "",
   precision,
@@ -210,7 +213,7 @@ export function SliderControl({
           id={id}
           type="range"
           min={min}
-          max={max}
+          max={Math.min(max, sliderMax ?? max)}
           step={step}
           value={value}
           onChange={(event) => onChange(Number(event.target.value))}

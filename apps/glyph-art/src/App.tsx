@@ -7,6 +7,8 @@ import { SpatialGradient } from "./components/SpatialGradient";
 import { SymbolHold } from "./components/SymbolHold";
 import { SymbolBlend } from "./components/SymbolBlend";
 import { BackgroundCleanup } from "./components/BackgroundCleanup";
+import { ExportWindow, type ExportWindowValue } from "./components/ExportWindow";
+import { canSaveDirectory, canSaveFile, pickExportDirectory, pickVideoFile } from "./export/fileOutput";
 import { GlyphLibrary, readFileAsDataUrl } from "./engine/glyphLibrary";
 import { GlyphRenderer } from "./engine/render";
 import { HalftoneRenderer } from "./engine/halftone";
@@ -23,7 +25,7 @@ import {
   frameCount,
   halftoneField,
   sequenceSize,
-  MAX_EXPORT_FRAMES,
+  rangeFromSeconds,
   type ExportSource,
 } from "./export/renderSequence";
 import { activePreset, bandGlyphs, gradientPresets, levelMarks, librarySpecs, presetEraList } from "./presets";
@@ -43,6 +45,7 @@ import {
   maxSpacing,
   maxSpread,
   maxWeight,
+  maxTimelineFrames,
   minBands,
   minFps,
   minGain,
@@ -151,6 +154,8 @@ export function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<{ label: string; done: number; total: number } | null>(null);
   const [format, setFormat] = useState<ExportFormat>("png");
+  const [exportWindow, setExportWindow] = useState<ExportWindowValue>({ enabled: false, start: 0, end: null });
+  const [directSave, setDirectSave] = useState(true);
   const [inks, setInks] = useState<ExportInk[]>(["flat"]);
   const [markText, setMarkText] = useState("");
   const [markFont, setMarkFont] = useState(fontStacks[0].id);
@@ -424,6 +429,7 @@ export function App() {
     setMessage(null);
     setPlaying(false);
     setFrame(0);
+    setExportWindow({ enabled: false, start: 0, end: null });
     setPreviewZoom(1);
     const url = URL.createObjectURL(file);
     const chooseSymbols = () => {
@@ -439,6 +445,9 @@ export function App() {
         video.playsInline = true;
         video.src = url;
         await metadata(video);
+        if (!Number.isFinite(video.duration) || video.duration < 0) {
+          throw new Error("This video has no finite duration. Convert it to a seekable H.264 file.");
+        }
         chooseSymbols();
         setMedia({
           kind: "video",
@@ -527,7 +536,11 @@ export function App() {
       : format === "mp4"
         ? "encoding MP4"
         : "drawing SVG";
-    setBusy({ label, done: 0, total: format === "svg" ? 1 : totalFrames });
+    const duration = totalFrames / settings.targetFps;
+    const end = Math.max(1 / settings.targetFps, Math.min(exportWindow.end ?? duration, duration));
+    const start = Math.max(0, Math.min(exportWindow.start, end - 1 / settings.targetFps));
+    const range = exportWindow.enabled ? rangeFromSeconds(totalFrames, settings.targetFps, start, end) : undefined;
+    setBusy({ label, done: 0, total: format === "svg" ? 1 : range ? range.end - range.start : totalFrames });
 
     const stem = (media?.name ?? "glyph-art").replace(/\.[^.]+$/, "");
     const onProgress = (done: number, total: number) => setBusy({
@@ -548,36 +561,49 @@ export function App() {
         setBusy({ label, done: 1, total: 1 });
         downloadBlob(blob, `${stem}-glyph-art-${String(frame).padStart(4, "0")}.svg`);
       } else if (format === "png") {
-        const blob = await exportPngSequence({
+        // Call the picker within the export click, before encoder/setup awaits.
+        const directory = directSave && canSaveDirectory() ? await pickExportDirectory() : undefined;
+        controller.signal.throwIfAborted();
+        const parts = await exportPngSequence({
           source: exportSource,
           settings,
           library,
           signal: controller.signal,
+          range,
+          directory,
           inks,
           separations: separationPlates,
           basename: stem,
           onProgress,
+          onArchive: (blob, name) => downloadBlob(blob, name),
         });
-        downloadBlob(blob, `${stem}-glyph-art.zip`);
+        setMessage(`Saved ${parts} ZIP part${parts === 1 ? "" : "s"}${directory ? " to the selected folder" : " to downloads"}. Combine the parts to import the full PNG sequence.`);
       } else {
-        const blob = await exportMp4({
+        const output = directSave && canSaveFile() ? await pickVideoFile(`${stem}-glyph-art.mp4`) : undefined;
+        const parts = await exportMp4({
           source: exportSource,
           settings,
           library,
           signal: controller.signal,
+          range,
+          output,
           onProgress,
+          onPart: (blob, part) => downloadBlob(blob, `${stem}-glyph-art-part${String(part).padStart(4, "0")}.mp4`),
         });
-        downloadBlob(blob, `${stem}-glyph-art.mp4`);
+        setMessage(output ? "Saved the full selected video directly to disk."
+          : `Saved ${parts} MP4 part${parts === 1 ? "" : "s"} in playback order. No frames were skipped.`);
       }
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setMessage("Export cancelled. Any parts already completed are kept; an unfinished disk write is discarded.");
+      } else {
         setMessage(error instanceof Error ? error.message : "The export failed.");
       }
     } finally {
       abortRef.current = null;
       setBusy(null);
     }
-  }, [exportSource, field, fieldReady, format, frame, frameWidth, frameHeight, inks, library, media?.name, ramp, renderSettings, separationPlates, settings, totalFrames, marksReady]);
+  }, [exportSource, exportWindow, directSave, field, fieldReady, format, frame, frameWidth, frameHeight, inks, library, media?.name, ramp, renderSettings, separationPlates, settings, totalFrames, marksReady]);
 
   const copyShareLink = useCallback(() => {
     window.location.hash = `p=${encodeSettings(settings)}`;
@@ -1275,7 +1301,8 @@ export function App() {
               onChange={(value) => setGlobal("targetFps", Math.round(value))}
             />
             {media?.kind !== "video" && <>
-              <SliderControl label="frames" value={settings.stillFrames} min={1} max={MAX_EXPORT_FRAMES}
+              <SliderControl label="frames" value={settings.stillFrames} min={1} max={maxTimelineFrames}
+                sliderMax={Math.max(3600, settings.stillFrames)}
                 onChange={(value) => setGlobal("stillFrames", Math.round(value))} />
               <p className="control-hint">Sequence: {(settings.stillFrames / settings.targetFps).toFixed(2)} seconds.
                 {halftoning && " A still under a fixed screen does not change with time."}</p>
@@ -1345,8 +1372,8 @@ export function App() {
                   <div className="button-row">
                     <button
                       type="button"
-                      onClick={() => setGlobal("stillFrames", seamless)}
-                      disabled={settings.animation.enabled
+                      onClick={() => { if (seamless !== null) setGlobal("stillFrames", seamless); }}
+                      disabled={seamless === null || settings.animation.enabled
                         || settings.symbolBlend.enabled
                         || (settings.symbolMotion.mode === "scatter" && settings.hold !== "infinite")
                         || settings.stillFrames === seamless}
@@ -1355,7 +1382,8 @@ export function App() {
                         ? settings.symbolMotion.loop && media?.kind === "image" && !settings.animation.enabled
                           ? `scatter loop: ${settings.stillFrames} frames`
                           : "scatter has no exact loop"
-                        : `${settings.hold === "infinite" ? "static symbols" : "seamless loop"}: ${seamless}`}
+                        : seamless === null ? "cycle too long; use scatter loop"
+                          : `${settings.hold === "infinite" ? "static symbols" : "seamless loop"}: ${seamless}`}
                     </button>
                   </div>
                 {settings.animation.enabled && <p className="control-hint">
@@ -1394,6 +1422,9 @@ export function App() {
                 svg
               </button>
             </div>
+
+            <ExportWindow value={exportWindow} onChange={setExportWindow} format={format}
+              frames={totalFrames} fps={settings.targetFps} direct={directSave} onDirect={setDirectSave} />
 
             {format === "svg" ? (
               <p className="control-hint">
@@ -1454,9 +1485,6 @@ export function App() {
             </button>
             {busy && (
               <button type="button" onClick={() => abortRef.current?.abort()}>cancel</button>
-            )}
-            {totalFrames >= MAX_EXPORT_FRAMES && (
-              <p className="control-hint">Capped at {MAX_EXPORT_FRAMES} frames.</p>
             )}
           </section>
 

@@ -98,7 +98,8 @@ describe("seamless loop length", () => {
     expect(loopLength([4, 6], 1)).toBe(12);
   });
 
-  it("stays inside the export cap", () => {
-    expect(loopLength([7, 11, 13, 17, 19], 24)).toBeLessThanOrEqual(900);
+  it("keeps the exact long period instead of pretending the old export cap is seamless", () => {
+    expect(loopLength([7, 11, 13, 17, 19], 24)).toBe(7759752);
+    expect(loopLength([100003, 100019, 100043, 100049], 24)).toBeNull();
   });
 });

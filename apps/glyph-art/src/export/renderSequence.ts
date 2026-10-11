@@ -19,7 +19,6 @@ import { gridSize, pitchAspect, sampleSource, type ToneField } from "../engine/t
 import { referenceGrid, settingsAtFrame } from "../animation";
 import {
   halftoneSize,
-  maxExportFrames,
   type ExportInk,
   type Settings,
 } from "../types";
@@ -27,8 +26,6 @@ import {
 export type ExportSource =
   | { kind: "video"; video: HTMLVideoElement; width: number; height: number; duration: number }
   | { kind: "image"; bitmap: ImageBitmap; width: number; height: number };
-
-export const MAX_EXPORT_FRAMES = maxExportFrames;
 
 /**
  * A video is as long as its duration at the target rate. A still has no
@@ -38,7 +35,23 @@ export function frameCount(source: ExportSource, settings: Settings) {
   const requested = source.kind === "image"
     ? Math.round(settings.stillFrames)
     : Math.ceil(source.duration * settings.targetFps);
-  return Math.min(maxExportFrames, Math.max(1, requested));
+  if (!Number.isFinite(requested) || requested > Number.MAX_SAFE_INTEGER) {
+    throw new Error("The source does not have a finite, usable duration.");
+  }
+  return Math.max(1, requested);
+}
+
+/** Absolute frame indices, end exclusive. Trimming never restarts the artwork's clocks. */
+export type FrameRange = { start: number; end: number };
+
+export function normalizeFrameRange(total: number, range?: FrameRange): FrameRange {
+  const start = Math.max(0, Math.min(total - 1, Math.floor(Number.isFinite(range?.start) ? range!.start : 0)));
+  const end = Math.max(start + 1, Math.min(total, Math.ceil(Number.isFinite(range?.end) ? range!.end : total)));
+  return { start, end };
+}
+
+export function rangeFromSeconds(total: number, fps: number, start: number, end: number) {
+  return normalizeFrameRange(total, { start: Math.ceil(start * fps - 1e-7), end: Math.ceil(end * fps - 1e-7) });
 }
 
 /**
@@ -67,14 +80,17 @@ export function sequenceSize(source: ExportSource, settings: Settings) {
   return { gridW, gridH, cell, width, height };
 }
 
-function seek(video: HTMLVideoElement, time: number) {
+function seek(video: HTMLVideoElement, time: number, signal: AbortSignal) {
+  signal.throwIfAborted();
   if (Math.abs(video.currentTime - time) < 0.0005 && video.readyState >= 2) {
     return Promise.resolve();
   }
   return new Promise<void>((resolve, reject) => {
     const cleanup = () => {
+      clearTimeout(timer);
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("error", onError);
+      signal.removeEventListener("abort", onAbort);
     };
     const onSeeked = () => {
       cleanup();
@@ -84,9 +100,13 @@ function seek(video: HTMLVideoElement, time: number) {
       cleanup();
       reject(new Error("The browser could not decode a requested video frame."));
     };
+    const onAbort = () => { cleanup(); reject(new DOMException("Export cancelled.", "AbortError")); };
+    const timer = setTimeout(onError, 15_000);
     video.addEventListener("seeked", onSeeked, { once: true });
     video.addEventListener("error", onError, { once: true });
-    video.currentTime = time;
+    signal.addEventListener("abort", onAbort, { once: true });
+    try { video.currentTime = time; }
+    catch (error) { cleanup(); reject(error); }
   });
 }
 
@@ -96,6 +116,7 @@ export type SequenceOptions = {
   ink: ExportInk;
   library: GlyphLibrary;
   signal: AbortSignal;
+  range?: FrameRange;
   /** Halftone only: render this separation alone, as a printing plate. */
   plate?: number;
 };
@@ -104,6 +125,9 @@ export type RenderedFrame = {
   canvas: HTMLCanvasElement;
   index: number;
   total: number;
+  /** Position inside the selected export, for zero-based MP4 timestamps. */
+  offset: number;
+  fullTotal: number;
 };
 
 /**
@@ -112,7 +136,9 @@ export type RenderedFrame = {
  */
 export async function* renderSequence(options: SequenceOptions): AsyncGenerator<RenderedFrame> {
   const { source, settings, ink, library, signal, plate } = options;
-  const total = frameCount(source, settings);
+  const fullTotal = frameCount(source, settings);
+  const range = normalizeFrameRange(fullTotal, options.range);
+  const total = range.end - range.start;
   const frame = sequenceSize(source, settings);
   const canvas = document.createElement("canvas");
   const scratch = document.createElement("canvas");
@@ -124,16 +150,16 @@ export async function* renderSequence(options: SequenceOptions): AsyncGenerator<
   let field: ToneField | null = null;
   let sampledGrid = "";
 
-  for (let index = 0; index < total; index += 1) {
+  for (let index = range.start; index < range.end; index += 1) {
     if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
 
-    const frameSettings = settingsAtFrame(settings, index, total);
+    const frameSettings = settingsAtFrame(settings, index, fullTotal);
     const { gridW, gridH } = frameSettings.mode === "halftone"
       ? halftoneField(frameSettings, source.width, source.height)
       : gridSize(frameSettings.grid, source.width, source.height, frameSettings.spacing);
 
     if (source.kind === "video") {
-      await seek(source.video, Math.min(source.duration, index / settings.targetFps));
+      await seek(source.video, Math.min(source.duration, index / settings.targetFps), signal);
       field = sampleSource(source.video, source.width, source.height, gridW, gridH, scratch, cellAspect);
     } else if (sampledGrid !== `${gridW}x${gridH}`) {
       field = sampleSource(source.bitmap, source.width, source.height, gridW, gridH, scratch, cellAspect);
@@ -149,13 +175,13 @@ export async function* renderSequence(options: SequenceOptions): AsyncGenerator<
         field,
         library,
         frame: index,
-        loopFrames: source.kind === "image" ? total : undefined,
+        loopFrames: source.kind === "image" ? fullTotal : undefined,
         ink,
         ramp,
         size: frame,
       });
     }
-    yield { canvas, index, total };
+    yield { canvas, index, total, fullTotal, offset: index - range.start };
   }
 }
 

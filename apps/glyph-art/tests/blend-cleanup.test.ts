@@ -168,7 +168,7 @@ describe("portable blend and cleanup settings", () => {
     const settings = parseSettings({ symbolBlend: { enabled: "true", enterStart: NaN,
       enterDuration: -3, exitStart: Infinity, exitDuration: 99999, fade: 9, exitOrder: "no" },
     cleanup: { black: "true", white: 1, blackTolerance: -1, whiteTolerance: 1, minSize: -1 } });
-    expect(settings.symbolBlend).toEqual({ ...initialSettings().symbolBlend, enterDuration: 0, exitDuration: 900, fade: 5 });
+    expect(settings.symbolBlend).toEqual({ ...initialSettings().symbolBlend, enterDuration: 0, exitDuration: 99999, fade: 5 });
     expect(settings.cleanup).toEqual({ ...initialSettings().cleanup, blackTolerance: 0, whiteTolerance: 0.49 });
   });
 

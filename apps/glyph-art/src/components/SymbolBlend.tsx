@@ -2,7 +2,7 @@ import { useId } from "react";
 import { NumberEntry, SliderControl } from "./RangeControl";
 import { Icon } from "./Icons";
 import { fitSymbolBlend } from "../engine/symbolBlend";
-import { maxExportFrames, type SymbolBlend as Blend } from "../types";
+import { maxTimelineSeconds, type SymbolBlend as Blend } from "../types";
 
 export function SymbolBlend({ blend, frames, fps, frame, looping, onChange, onEnable }: {
   blend: Blend;
@@ -21,7 +21,7 @@ export function SymbolBlend({ blend, frames, fps, frame, looping, onChange, onEn
   const seconds = (key: "enterStart" | "enterDuration" | "exitStart" | "exitDuration", label: string) =>
     <label className="blend-time">
       <span>{label} <span className="control-unit">s</span></span>
-      <NumberEntry label={`${label} value`} value={blend[key]} min={0} max={maxExportFrames}
+      <NumberEntry label={`${label} value`} value={blend[key]} min={0} max={maxTimelineSeconds}
         step={0.01} precision={2} onChange={(value) => onChange({ ...blend, [key]: value }, `blend.${key}`)} />
     </label>;
   const bar = (start: number, duration: number) => ({

@@ -21,6 +21,15 @@ import {
 } from "../src/types";
 
 describe("parsing an untrusted project", () => {
+  it("preserves long still timelines and blend times in projects and share links", () => {
+    const settings = parseSettings({ stillFrames: 216000, targetFps: 60,
+      symbolBlend: { enabled: true, enterStart: 1200, enterDuration: 60, exitStart: 3500, exitDuration: 99 } });
+    expect(settings.stillFrames).toBe(216000);
+    expect(settings.symbolBlend.enterStart).toBe(1200);
+    expect(settings.symbolBlend.exitStart).toBe(3500);
+    expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+    expect(decodeSettings(encodeSettings(settings))).toEqual(settings);
+  });
   it("preserves seamless scatter in JSON and links without enabling it in legacy projects", () => {
     expect(parseSettings({ symbolMotion: { mode: "scatter", amount: 10, interval: 250 } }).symbolMotion.loop).toBe(false);
     for (const loop of [true, false]) {

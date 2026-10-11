@@ -1,5 +1,12 @@
 # Architecture decisions
 
+## 2026-10-11 — full timelines and bounded long exports
+
+- **Decision:** Remove the 900-frame cap from video/still timelines and project parsing. Add an optional export interval with absolute artwork frame indices. Use the existing MP4 muxer's StreamTarget with ordered, backpressured local filesystem writes for one full MP4; use incremental ZIP32 parts for PNG. Unsupported browsers download bounded MP4/ZIP parts instead.
+- **Alternatives:** Merely remove the cap and retain whole movies/PNG maps in RAM; add a server or a new encoding library; keep silently truncating clips.
+- **Reason:** The cap was a memory guard, not an upload limitation, and makes ordinary videos at high FPS unusable. Disk streaming and numbered parts remove that time limit without accumulating every rendered frame.
+- **Consequences:** Native pickers are optional, click-initiated and local. PNG folder export refuses existing part names rather than silently overwriting. PNG parts close at 128 MiB of frame data or 2,000 images; MP4 download parts use a conservative frame/64 MiB encoded-media budget. A single frame/codec queue can overshoot byte thresholds; MP4 metadata still scales with frame count. Cancellation keeps completed parts and aborts unfinished writes. Trimming preserves scatter/appearance/grid phase and still-loop duration, while each MP4 starts its own timestamps at zero. SVG remains the current frame's original outlines. Still length and blend timings retain only numerical-safety bounds. The classic-cycle shortcut now returns its exact common period or disables itself when that period is numerically unrepresentable, instead of incorrectly calling 900 frames seamless. No dependencies or network APIs added. This supersedes the earlier 900-frame guard decisions; see `docs/glyph-art-long-exports.md`.
+
 ## 2026-10-11 — independent cell appearance and source-background cleanup
 
 - **Decision:** Add a stateless, layout-seeded per-cell opacity envelope in seconds, independent of scatter/cycling. Share it and raw-tone/minimum-size clipping in glyph placements for Canvas and SVG. Keep partial SVG impressions separate with fill opacity; reuse their original prepared outlines.

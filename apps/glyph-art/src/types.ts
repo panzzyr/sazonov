@@ -285,8 +285,9 @@ export const maxHold = 24;
 export const minFps = 1;
 export const maxFps = 60;
 
-/** Guards against a long sequence exhausting memory mid-export. */
-export const maxExportFrames = 900;
+/** Numeric safety only. Export memory is bounded by writers, not clip duration. */
+export const maxTimelineFrames = Number.MAX_SAFE_INTEGER;
+export const maxTimelineSeconds = maxTimelineFrames / maxFps;
 
 /**
  * A mark smaller than this is grit rather than a mark, and one larger than

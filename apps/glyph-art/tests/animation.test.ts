@@ -28,7 +28,7 @@ describe("grid keyframes", () => {
     expect(settingsAtFrame(settings, 240, 241).grid).toBe(200);
     expect(settingsAtFrame(settings, 120, 241).hold).toBe("infinite");
     expect(frameCount({ kind: "video", duration: 2 } as ExportSource, settings)).toBe(120);
-    expect(frameCount({ kind: "video", duration: 100 } as ExportSource, settings)).toBe(900);
+    expect(frameCount({ kind: "video", duration: 100 } as ExportSource, settings)).toBe(6000);
   });
   it("reaches the exact first, middle and last keyframes", () => {
     const settings = animated();
